@@ -27,7 +27,6 @@ export function updateHazardVelocities(
       return true;
     }
 
-    const isJumping = hz.getData("isSnatcherJumping") as boolean | undefined;
     body.setVelocityX(-(scrollSpeed + 20));
 
     // ひったくりは 1→2→3 のループで走行アニメーション化する

@@ -15,7 +15,7 @@ function hazardTextureKey(kind: "shoplifter" | "biker"): string {
     "obstacle-snatcher-2",
     "obstacle-snatcher-3",
   ] as const;
-  return Phaser.Utils.Array.GetRandom(variants);
+  return Phaser.Utils.Array.GetRandom([...variants]);
 }
 
 // 障害物を地面に接地させる基準値（必要ならここだけ調整）

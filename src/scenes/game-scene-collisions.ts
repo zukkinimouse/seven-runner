@@ -49,7 +49,7 @@ export function registerCollisions(args: {
   });
 
   scene.physics.add.overlap(player, hazards, (_p, obj) => {
-    const hz = obj as Phaser.GameObjects.Rectangle & {
+    const hz = obj as Phaser.GameObjects.Image & {
       body: Phaser.Physics.Arcade.Body;
     };
     const kind = hz.getData("kind") as "shoplifter" | "biker" | undefined;
