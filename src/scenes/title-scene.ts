@@ -360,7 +360,7 @@ export class TitleScene extends Phaser.Scene {
             : [
                 "⭐ ジャンプ：JUMPボタン",
                 "👆 左画面半分タップでもジャンプ",
-                "⚡ 攻撃：ATTACKボタン（クールタイムあり）",
+                "⚡ ATTACKで攻撃（CTあり）",
               ].join("\n"),
         },
         {
