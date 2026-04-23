@@ -348,14 +348,20 @@ export class TitleScene extends Phaser.Scene {
       .setShadow(0, 2, "#000000", 0.75, true, true);
     const controls: Phaser.GameObjects.GameObject[] = [];
     if (payload.title === "遊び方") {
+      const isDesktopDevice = this.sys.game.device.os.desktop;
       const pages = [
         {
           heading: "1/4 操作方法",
-          body: [
-            "⭐ ジャンプ：SPACE / ↑",
-            "👆 ジャンプ：JUMPボタン / 左画面半分タップ",
-            "⚡ 攻撃：X / ATTACKボタン（クールタイムあり）",
-          ].join("\n"),
+          body: isDesktopDevice
+            ? [
+                "⭐ ジャンプ：SPACE / ↑",
+                "⚡ 攻撃：X（クールタイムあり）",
+              ].join("\n")
+            : [
+                "⭐ ジャンプ：JUMPボタン",
+                "👆 左画面半分タップでもジャンプ",
+                "⚡ 攻撃：ATTACKボタン（クールタイムあり）",
+              ].join("\n"),
         },
         {
           heading: "2/4 アイテム",

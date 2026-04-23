@@ -2,6 +2,9 @@
 let ctx: AudioContext | null = null;
 let seVolume = 1;
 let isMuted = false;
+// BGMに対してSEが小さくなり過ぎないよう、実効音量レンジを底上げする
+const SE_VOLUME_MIN = 0.28;
+const SE_VOLUME_MAX = 1.65;
 
 function getCtx(): AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -28,7 +31,8 @@ function beep(freq: number, durationMs: number, gain = 0.05): void {
 }
 
 export function setSeVolume(volume: number): void {
-  seVolume = Math.max(0, Math.min(1, volume));
+  const normalized = Math.max(0, Math.min(1, volume));
+  seVolume = SE_VOLUME_MIN + (SE_VOLUME_MAX - SE_VOLUME_MIN) * normalized;
 }
 
 export function getSeVolume(): number {
