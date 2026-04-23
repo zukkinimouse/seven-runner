@@ -8,7 +8,8 @@ export default defineConfig({
   build: { target: "esnext" },
   plugins: [
     VitePWA({
-      registerType: "prompt",
+      registerType: "autoUpdate",
+      injectRegister: "auto",
       includeAssets: [
         "icons/pwa-192.png",
         "icons/pwa-512.png",
@@ -49,6 +50,8 @@ export default defineConfig({
         globPatterns: ["**/*.{js,css,html,ico,png,svg,webp,jpg,jpeg,mp3,woff2}"],
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
         cleanupOutdatedCaches: true,
+        skipWaiting: true,
+        clientsClaim: true,
       },
       devOptions: {
         enabled: false,
