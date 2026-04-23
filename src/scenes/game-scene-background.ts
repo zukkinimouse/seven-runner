@@ -47,6 +47,7 @@ export function createBackgroundLayers(scene: Phaser.Scene): BackgroundState {
   const far = scene.add
     .tileSprite(0, 0, GAME_WIDTH, GAME_HEIGHT, "bg-far")
     .setOrigin(0, 0)
+    .setScrollFactor(0)
     .setDepth(-30)
     .setAlpha(0.9);
 
@@ -55,6 +56,7 @@ export function createBackgroundLayers(scene: Phaser.Scene): BackgroundState {
   const mid = scene.add
     .tileSprite(0, 0, GAME_WIDTH, GAME_HEIGHT, initialMidKey)
     .setOrigin(0, 0)
+    .setScrollFactor(0)
     .setDepth(-20)
     .setAlpha(0.96);
   applyMidLayerLayout(mid);
