@@ -9,7 +9,7 @@ export default defineConfig({
   plugins: [
     VitePWA({
       registerType: "autoUpdate",
-      injectRegister: false,
+      injectRegister: "auto",
       includeAssets: [
         "icons/pwa-192.png",
         "icons/pwa-512.png",

@@ -22,7 +22,7 @@ export function rankFromTotalYen(totalYen: number): {
 
 /** ランクの優劣順（保存用） */
 export function rankScore(rank: CouponRank): number {
-  // 現在仕様は D < C < B < A < P の5段階
-  const order: CouponRank[] = ["D", "C", "B", "A", "P"];
+  // 現在仕様は D < C < B < A の4段階
+  const order: CouponRank[] = ["D", "C", "B", "A"];
   return order.indexOf(rank);
 }

@@ -23,8 +23,7 @@ export function createTouchControls(
   const w = scene.scale.width;
   const h = scene.scale.height;
   const isMobileLayout = w <= 768;
-  // スマホ版は等倍のまま、操作しやすいように少しだけ拡大する
-  const buttonSize = isMobileLayout ? 103 : 68;
+  const buttonSize = isMobileLayout ? 86 : 68;
   const edgePadding = isMobileLayout ? 14 : 10;
   const buttonGap = isMobileLayout ? 14 : 10;
   const buttonYBase = h - edgePadding - buttonSize / 2;
@@ -63,9 +62,8 @@ export function createTouchControls(
 
     const setPressed = (pressed: boolean): void => {
       button.setFillStyle(style.fillColor, pressed ? 0.85 : 0.56);
-      // 等倍表示を維持しつつ、押下感はアルファのみで表現する
-      button.setScale(1);
-      text.setScale(1);
+      button.setScale(pressed ? 0.95 : 1);
+      text.setScale(pressed ? 0.95 : 1);
     };
 
     button.on("pointerdown", () => setPressed(true));

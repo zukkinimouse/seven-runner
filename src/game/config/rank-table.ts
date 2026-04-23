@@ -14,8 +14,6 @@ export const RANK_TABLE: readonly RankRow[] = [
   { minYen: 5000, rank: "C", label: "30円引き" },
   // 9000〜14999円
   { minYen: 9000, rank: "B", label: "50円引き" },
-  // 12000〜14999円
-  { minYen: 12000, rank: "A", label: "100円引き" },
-  // 15000円以上（プラチナ）
-  { minYen: 15000, rank: "P", label: "150円引き" },
+  // 15000円以上
+  { minYen: 15000, rank: "A", label: "100円引き" },
 ] as const;

@@ -5,7 +5,6 @@ type StaffMode = "idle" | "wave-loop" | "check-once" | "cheer-once";
 
 type StaffActor = {
   slot: number;
-  tweakX: number;
   sprite: Phaser.GameObjects.Image;
   mode: StaffMode;
   modeStartedAt: number;
@@ -27,18 +26,20 @@ const WAVE_KEYS = ["staff-wave-1", "staff-wave-2", "staff-wave-3", "staff-wave-2
 const BG_MID_TILE_SCALE_X = 0.9;
 const DOOR_TEXTURE_X = 1090;
 // 店舗ごとの微調整（px）
-// 店舗位置の見た目補正（近い将来のスポーン範囲だけで計算して、周回で破綻させない）
+// 要望: 0, 100, 160, 225, 295... のように
+// 基本+60に対して +5, +10, +15... と段階的に増やす
 const STAFF_TWEAK_FIRST = 0;
 const STAFF_TWEAK_SECOND = 100;
 const STAFF_TWEAK_STEP_BASE = 60;
 const STAFF_TWEAK_STEP_GROW = 5;
+const STAFF_TWEAK_STEP_MAX_SPEED = 70;
 // ドア左側に寄せるためのオフセット
 const STAFF_X_OFFSET = -14;
 const STAFF_Y = GROUND_Y - 2;
 const STAFF_DISPLAY_W = 61;
 const STAFF_DISPLAY_H = 145;
 const STAFF_DEPTH = -5;
-const STAFF_SCROLL_FACTOR = 0;
+const STAFF_SCROLL_FACTOR = 1;
 // 余白差による見た目ズレを吸収する表示補正（チアを基準に微調整）
 // 縦横を個別調整できるよう X/Y を分離する
 const STAFF_IDLE_SCALE_X = 1.0;
@@ -78,11 +79,11 @@ export function updateStaffSystem(
   playerX: number,
   scrollX: number,
   now: number,
+  isAtMaxSpeed: boolean,
 ): void {
   const metrics = calcDoorMetrics(scene, bgMid);
   if (!metrics) return;
-  const playerScreenX = playerX - scrollX;
-  ensureVisibleDoorActors(scene, state, metrics);
+  ensureVisibleDoorActors(scene, state, metrics, scrollX, isAtMaxSpeed);
 
   const kept: StaffActor[] = [];
   for (const actor of state.actors) {
@@ -90,20 +91,20 @@ export function updateStaffSystem(
     const worldX = Math.round(
       worldDoorX(metrics, actor.slot) +
         STAFF_X_OFFSET +
-        actor.tweakX,
+        slotTweakX(actor.slot, isAtMaxSpeed),
     );
     actor.sprite.setX(worldX);
     syncBubbleToActor(actor);
-    if (worldX < -360) {
+    if (worldX < scrollX - 360) {
       actor.bubble?.destroy(true);
       actor.sprite.destroy();
       continue;
     }
 
-    tryTriggerWaveOnEnter(state, actor, now);
-    tryTriggerPassMotion(state, actor, playerScreenX, now);
+    tryTriggerWaveOnEnter(state, actor, scrollX, now);
+    tryTriggerPassMotion(state, actor, playerX, now);
     updateStaffMotion(actor, now);
-    tryTriggerWelcome(scene, state, actor, playerScreenX, now);
+    tryTriggerWelcome(scene, state, actor, playerX, now);
     kept.push(actor);
   }
   state.actors = kept;
@@ -119,7 +120,7 @@ function calcDoorMetrics(
   scene: Phaser.Scene,
   bgMid: Phaser.GameObjects.TileSprite,
 ): DoorMetrics | null {
-  const src = scene.textures.get(bgMid.texture.key).getSourceImage() as {
+  const src = scene.textures.get("bg-mid").getSourceImage() as {
     width?: number;
   };
   if (!src?.width) return null;
@@ -132,9 +133,12 @@ function worldDoorX(metrics: DoorMetrics, slot: number): number {
   return metrics.offsetX + slot * metrics.patternWidth - metrics.tilePositionX;
 }
 
-function slotTweakX(slot: number): number {
+function slotTweakX(slot: number, isAtMaxSpeed: boolean): number {
   if (slot <= 0) return STAFF_TWEAK_FIRST;
   if (slot === 1) return STAFF_TWEAK_SECOND;
+  if (isAtMaxSpeed) {
+    return STAFF_TWEAK_SECOND + (slot - 1) * STAFF_TWEAK_STEP_MAX_SPEED;
+  }
   let value = STAFF_TWEAK_SECOND;
   for (let i = 2; i <= slot; i += 1) {
     const step = STAFF_TWEAK_STEP_BASE + STAFF_TWEAK_STEP_GROW * (i - 1);
@@ -143,30 +147,25 @@ function slotTweakX(slot: number): number {
   return value;
 }
 
-function calcRelativeSlot(slot: number, minSlot: number): number {
-  // 画面内スポーン帯の先頭を0基準にして、ループ周回で補正値が暴走しないようにする
-  return Math.max(0, slot - minSlot);
-}
-
 function ensureVisibleDoorActors(
   scene: Phaser.Scene,
   state: StaffSystemState,
   metrics: DoorMetrics,
+  scrollX: number,
+  isAtMaxSpeed: boolean,
 ): void {
-  const left = -120;
-  const right = GAME_WIDTH * 2.3;
+  const left = scrollX - 120;
+  const right = scrollX + GAME_WIDTH * 2.3;
   const minSlot =
     Math.floor((left + metrics.tilePositionX - metrics.offsetX) / metrics.patternWidth) - 1;
   const maxSlot =
     Math.ceil((right + metrics.tilePositionX - metrics.offsetX) / metrics.patternWidth) + 1;
 
   for (let slot = minSlot; slot <= maxSlot; slot += 1) {
-    const relativeSlot = calcRelativeSlot(slot, minSlot);
-    const tweakX = slotTweakX(relativeSlot);
     const worldX = Math.round(
       worldDoorX(metrics, slot) +
         STAFF_X_OFFSET +
-        tweakX,
+        slotTweakX(slot, isAtMaxSpeed),
     );
     if (worldX < left || worldX > right) continue;
     const exists = state.actors.some((actor) => actor.slot === slot && actor.sprite.active);
@@ -179,7 +178,6 @@ function ensureVisibleDoorActors(
       .setDepth(STAFF_DEPTH);
     state.actors.push({
       slot,
-      tweakX,
       sprite,
       mode: "idle",
       modeStartedAt: performance.now(),
@@ -277,11 +275,11 @@ function applyStaffDisplayAdjust(
 function tryTriggerPassMotion(
   state: StaffSystemState,
   actor: StaffActor,
-  playerScreenX: number,
+  playerX: number,
   now: number,
 ): void {
   if (actor.hasPlayedPassMotion) return;
-  if (playerScreenX < actor.sprite.x + 16) return;
+  if (playerX < actor.sprite.x + 16) return;
   actor.hasPlayedPassMotion = true;
   // Wave は画面内に入った瞬間のみ発火させるため、通過時は check/cheer のみ抽選
   actor.mode = pickNonConsecutiveMotion(state, ["check-once", "cheer-once"]);
@@ -293,11 +291,12 @@ function tryTriggerPassMotion(
 function tryTriggerWaveOnEnter(
   state: StaffSystemState,
   actor: StaffActor,
+  scrollX: number,
   now: number,
 ): void {
   if (actor.hasCheckedEntryWave) return;
-  const rightEdge = GAME_WIDTH;
-  const leftEdge = -40;
+  const rightEdge = scrollX + GAME_WIDTH;
+  const leftEdge = scrollX - 40;
   if (actor.sprite.x > rightEdge - 8) return;
   if (actor.sprite.x < leftEdge) return;
   actor.hasCheckedEntryWave = true;
@@ -316,11 +315,11 @@ function tryTriggerWelcome(
   scene: Phaser.Scene,
   state: StaffSystemState,
   actor: StaffActor,
-  playerScreenX: number,
+  playerX: number,
   now: number,
 ): void {
   if (actor.hasWelcomed) return;
-  if (playerScreenX < actor.sprite.x + 16) return;
+  if (playerX < actor.sprite.x + 16) return;
   if (now < state.nextGlobalSpeechAt) return;
 
   actor.hasWelcomed = true;
