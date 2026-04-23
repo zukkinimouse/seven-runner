@@ -253,7 +253,7 @@ export class GameScene extends Phaser.Scene {
     this.spawnMilestoneSnatchers(now);
     this.cullStaleEnergyDrinks(this.cameras.main.scrollX);
     this.spawnTimedEnergyDrink(now, this.player.x);
-    this.updateStaffNpcAndSpeech(now, scrollSpeed);
+    this.updateStaffNpcAndSpeech(now);
     cleanupOldChunks(this.chunks, this.cameras.main.scrollX);
 
     this.updateHud(elapsedSec, scrollSpeed);
@@ -305,7 +305,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   /** コンビニ前の店員NPCと吹き出しを更新する */
-  private updateStaffNpcAndSpeech(now: number, scrollSpeed: number): void {
+  private updateStaffNpcAndSpeech(now: number): void {
     updateStaffSystem(
       this,
       this.background.mid,
@@ -313,7 +313,6 @@ export class GameScene extends Phaser.Scene {
       this.player.x,
       this.cameras.main.scrollX,
       now,
-      scrollSpeed >= 330,
     );
   }
 

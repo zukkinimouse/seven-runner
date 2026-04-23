@@ -26,13 +26,8 @@ const WAVE_KEYS = ["staff-wave-1", "staff-wave-2", "staff-wave-3", "staff-wave-2
 const BG_MID_TILE_SCALE_X = 0.9;
 const DOOR_TEXTURE_X = 1090;
 // 店舗ごとの微調整（px）
-// 要望: 0, 100, 160, 225, 295... のように
-// 基本+60に対して +5, +10, +15... と段階的に増やす
-const STAFF_TWEAK_FIRST = 0;
-const STAFF_TWEAK_SECOND = 100;
-const STAFF_TWEAK_STEP_BASE = 60;
-const STAFF_TWEAK_STEP_GROW = 5;
-const STAFF_TWEAK_STEP_MAX_SPEED = 70;
+// 店舗位置の見た目補正は固定パターンを繰り返す（周回で累積させない）
+const STAFF_SLOT_TWEAK_PATTERN = [0, 100, 160, 225, 295] as const;
 // ドア左側に寄せるためのオフセット
 const STAFF_X_OFFSET = -14;
 const STAFF_Y = GROUND_Y - 2;
@@ -79,12 +74,11 @@ export function updateStaffSystem(
   playerX: number,
   scrollX: number,
   now: number,
-  isAtMaxSpeed: boolean,
 ): void {
   const metrics = calcDoorMetrics(scene, bgMid);
   if (!metrics) return;
   const playerScreenX = playerX - scrollX;
-  ensureVisibleDoorActors(scene, state, metrics, isAtMaxSpeed);
+  ensureVisibleDoorActors(scene, state, metrics);
 
   const kept: StaffActor[] = [];
   for (const actor of state.actors) {
@@ -92,7 +86,7 @@ export function updateStaffSystem(
     const worldX = Math.round(
       worldDoorX(metrics, actor.slot) +
         STAFF_X_OFFSET +
-        slotTweakX(actor.slot, isAtMaxSpeed),
+        slotTweakX(actor.slot),
     );
     actor.sprite.setX(worldX);
     syncBubbleToActor(actor);
@@ -134,25 +128,16 @@ function worldDoorX(metrics: DoorMetrics, slot: number): number {
   return metrics.offsetX + slot * metrics.patternWidth - metrics.tilePositionX;
 }
 
-function slotTweakX(slot: number, isAtMaxSpeed: boolean): number {
-  if (slot <= 0) return STAFF_TWEAK_FIRST;
-  if (slot === 1) return STAFF_TWEAK_SECOND;
-  if (isAtMaxSpeed) {
-    return STAFF_TWEAK_SECOND + (slot - 1) * STAFF_TWEAK_STEP_MAX_SPEED;
-  }
-  let value = STAFF_TWEAK_SECOND;
-  for (let i = 2; i <= slot; i += 1) {
-    const step = STAFF_TWEAK_STEP_BASE + STAFF_TWEAK_STEP_GROW * (i - 1);
-    value += step;
-  }
-  return value;
+function slotTweakX(slot: number): number {
+  const pattern = STAFF_SLOT_TWEAK_PATTERN;
+  const idx = ((slot % pattern.length) + pattern.length) % pattern.length;
+  return pattern[idx] ?? 0;
 }
 
 function ensureVisibleDoorActors(
   scene: Phaser.Scene,
   state: StaffSystemState,
   metrics: DoorMetrics,
-  isAtMaxSpeed: boolean,
 ): void {
   const left = -120;
   const right = GAME_WIDTH * 2.3;
@@ -165,7 +150,7 @@ function ensureVisibleDoorActors(
     const worldX = Math.round(
       worldDoorX(metrics, slot) +
         STAFF_X_OFFSET +
-        slotTweakX(slot, isAtMaxSpeed),
+        slotTweakX(slot),
     );
     if (worldX < left || worldX > right) continue;
     const exists = state.actors.some((actor) => actor.slot === slot && actor.sprite.active);
