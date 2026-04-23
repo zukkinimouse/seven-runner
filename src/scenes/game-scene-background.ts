@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { GAME_HEIGHT, GAME_WIDTH } from "../game/game-config";
+import { createRuntimeProfile } from "../game/config/runtime-profile";
 
 export type BackgroundState = {
   far: Phaser.GameObjects.TileSprite;
@@ -9,6 +10,7 @@ export type BackgroundState = {
 
 const MID_TILE_SCALE = 0.9;
 const MID_TILE_POSITION_Y = 380;
+const RUNTIME_PROFILE = createRuntimeProfile();
 
 function buildMidCycleKeys(scene: Phaser.Scene): string[] {
   const orderedKeys = [
@@ -22,15 +24,9 @@ function buildMidCycleKeys(scene: Phaser.Scene): string[] {
   return orderedKeys;
 }
 
-function isIOSLikeRuntime(): boolean {
-  const ua = navigator.userAgent;
-  return /iPhone|iPad|iPod/i.test(ua);
-}
-
 function pickMidTextureKey(scene: Phaser.Scene, elapsedSec: number): string {
   const cycleKeys = buildMidCycleKeys(scene);
-  // iOS は切替回数を減らして描画負荷を抑える
-  const slotSec = isIOSLikeRuntime() ? 30 : 15;
+  const slotSec = RUNTIME_PROFILE.bgSwitchIntervalSec;
   const cycleSec = elapsedSec % (cycleKeys.length * slotSec);
   const index = Math.floor(cycleSec / slotSec);
   return cycleKeys[index] ?? "bg-mid";

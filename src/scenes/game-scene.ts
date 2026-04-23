@@ -311,6 +311,7 @@ export class GameScene extends Phaser.Scene {
       this.background.mid,
       this.staffSystem,
       this.player.x,
+      this.cameras.main.scrollX,
       now,
       scrollSpeed >= 330,
     );

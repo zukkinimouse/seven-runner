@@ -39,7 +39,7 @@ const STAFF_Y = GROUND_Y - 2;
 const STAFF_DISPLAY_W = 61;
 const STAFF_DISPLAY_H = 145;
 const STAFF_DEPTH = -5;
-const STAFF_SCROLL_FACTOR = 0;
+const STAFF_SCROLL_FACTOR = 1;
 // 余白差による見た目ズレを吸収する表示補正（チアを基準に微調整）
 // 縦横を個別調整できるよう X/Y を分離する
 const STAFF_IDLE_SCALE_X = 1.0;
@@ -77,30 +77,31 @@ export function updateStaffSystem(
   bgMid: Phaser.GameObjects.TileSprite,
   state: StaffSystemState,
   playerX: number,
+  scrollX: number,
   now: number,
   isAtMaxSpeed: boolean,
 ): void {
   const metrics = calcDoorMetrics(scene, bgMid);
   if (!metrics) return;
-  ensureVisibleDoorActors(scene, state, metrics, isAtMaxSpeed);
+  ensureVisibleDoorActors(scene, state, metrics, scrollX, isAtMaxSpeed);
 
   const kept: StaffActor[] = [];
   for (const actor of state.actors) {
     if (!actor.sprite.active) continue;
     const worldX = Math.round(
-      worldDoorX(metrics, actor.slot) +
+      worldDoorX(metrics, actor.slot, scrollX) +
         STAFF_X_OFFSET +
         slotTweakX(actor.slot, isAtMaxSpeed),
     );
     actor.sprite.setX(worldX);
     syncBubbleToActor(actor);
-    if (worldX < -360) {
+    if (worldX < scrollX - 360) {
       actor.bubble?.destroy(true);
       actor.sprite.destroy();
       continue;
     }
 
-    tryTriggerWaveOnEnter(state, actor, now);
+    tryTriggerWaveOnEnter(state, actor, scrollX, now);
     tryTriggerPassMotion(state, actor, playerX, now);
     updateStaffMotion(actor, now);
     tryTriggerWelcome(scene, state, actor, playerX, now);
@@ -128,8 +129,10 @@ function calcDoorMetrics(
   return { patternWidth, offsetX, tilePositionX: bgMid.tilePositionX };
 }
 
-function worldDoorX(metrics: DoorMetrics, slot: number): number {
-  return metrics.offsetX + slot * metrics.patternWidth - metrics.tilePositionX;
+function worldDoorX(metrics: DoorMetrics, slot: number, scrollX: number): number {
+  // 背景が固定レイヤーでも、店員はワールド座標で管理して通過判定と整合させる
+  const screenDoorX = metrics.offsetX + slot * metrics.patternWidth - metrics.tilePositionX;
+  return screenDoorX + scrollX;
 }
 
 function slotTweakX(slot: number, isAtMaxSpeed: boolean): number {
@@ -150,10 +153,11 @@ function ensureVisibleDoorActors(
   scene: Phaser.Scene,
   state: StaffSystemState,
   metrics: DoorMetrics,
+  scrollX: number,
   isAtMaxSpeed: boolean,
 ): void {
-  const left = -120;
-  const right = GAME_WIDTH * 2.3;
+  const left = scrollX - 120;
+  const right = scrollX + GAME_WIDTH * 2.3;
   const minSlot =
     Math.floor((left + metrics.tilePositionX - metrics.offsetX) / metrics.patternWidth) - 1;
   const maxSlot =
@@ -161,7 +165,7 @@ function ensureVisibleDoorActors(
 
   for (let slot = minSlot; slot <= maxSlot; slot += 1) {
     const worldX = Math.round(
-      worldDoorX(metrics, slot) +
+      worldDoorX(metrics, slot, scrollX) +
         STAFF_X_OFFSET +
         slotTweakX(slot, isAtMaxSpeed),
     );
@@ -289,11 +293,12 @@ function tryTriggerPassMotion(
 function tryTriggerWaveOnEnter(
   state: StaffSystemState,
   actor: StaffActor,
+  scrollX: number,
   now: number,
 ): void {
   if (actor.hasCheckedEntryWave) return;
-  const rightEdge = GAME_WIDTH;
-  const leftEdge = -40;
+  const rightEdge = scrollX + GAME_WIDTH;
+  const leftEdge = scrollX - 40;
   if (actor.sprite.x > rightEdge - 8) return;
   if (actor.sprite.x < leftEdge) return;
   actor.hasCheckedEntryWave = true;
