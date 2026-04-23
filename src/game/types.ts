@@ -12,7 +12,7 @@ export type ItemDefinition = {
   rarity: ItemRarity;
 };
 
-export type CouponRank = "D" | "C" | "B" | "A";
+export type CouponRank = "D" | "C" | "B" | "A" | "P";
 
 export type ReceiptLine = {
   name: string;

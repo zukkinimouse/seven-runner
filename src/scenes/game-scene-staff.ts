@@ -39,7 +39,7 @@ const STAFF_Y = GROUND_Y - 2;
 const STAFF_DISPLAY_W = 61;
 const STAFF_DISPLAY_H = 145;
 const STAFF_DEPTH = -5;
-const STAFF_SCROLL_FACTOR = 1;
+const STAFF_SCROLL_FACTOR = 0;
 // 余白差による見た目ズレを吸収する表示補正（チアを基準に微調整）
 // 縦横を個別調整できるよう X/Y を分離する
 const STAFF_IDLE_SCALE_X = 1.0;
@@ -83,28 +83,29 @@ export function updateStaffSystem(
 ): void {
   const metrics = calcDoorMetrics(scene, bgMid);
   if (!metrics) return;
-  ensureVisibleDoorActors(scene, state, metrics, scrollX, isAtMaxSpeed);
+  const playerScreenX = playerX - scrollX;
+  ensureVisibleDoorActors(scene, state, metrics, isAtMaxSpeed);
 
   const kept: StaffActor[] = [];
   for (const actor of state.actors) {
     if (!actor.sprite.active) continue;
     const worldX = Math.round(
-      worldDoorX(metrics, actor.slot, scrollX) +
+      worldDoorX(metrics, actor.slot) +
         STAFF_X_OFFSET +
         slotTweakX(actor.slot, isAtMaxSpeed),
     );
     actor.sprite.setX(worldX);
     syncBubbleToActor(actor);
-    if (worldX < scrollX - 360) {
+    if (worldX < -360) {
       actor.bubble?.destroy(true);
       actor.sprite.destroy();
       continue;
     }
 
-    tryTriggerWaveOnEnter(state, actor, scrollX, now);
-    tryTriggerPassMotion(state, actor, playerX, now);
+    tryTriggerWaveOnEnter(state, actor, now);
+    tryTriggerPassMotion(state, actor, playerScreenX, now);
     updateStaffMotion(actor, now);
-    tryTriggerWelcome(scene, state, actor, playerX, now);
+    tryTriggerWelcome(scene, state, actor, playerScreenX, now);
     kept.push(actor);
   }
   state.actors = kept;
@@ -120,7 +121,7 @@ function calcDoorMetrics(
   scene: Phaser.Scene,
   bgMid: Phaser.GameObjects.TileSprite,
 ): DoorMetrics | null {
-  const src = scene.textures.get("bg-mid").getSourceImage() as {
+  const src = scene.textures.get(bgMid.texture.key).getSourceImage() as {
     width?: number;
   };
   if (!src?.width) return null;
@@ -129,10 +130,8 @@ function calcDoorMetrics(
   return { patternWidth, offsetX, tilePositionX: bgMid.tilePositionX };
 }
 
-function worldDoorX(metrics: DoorMetrics, slot: number, scrollX: number): number {
-  // 背景が固定レイヤーでも、店員はワールド座標で管理して通過判定と整合させる
-  const screenDoorX = metrics.offsetX + slot * metrics.patternWidth - metrics.tilePositionX;
-  return screenDoorX + scrollX;
+function worldDoorX(metrics: DoorMetrics, slot: number): number {
+  return metrics.offsetX + slot * metrics.patternWidth - metrics.tilePositionX;
 }
 
 function slotTweakX(slot: number, isAtMaxSpeed: boolean): number {
@@ -153,11 +152,10 @@ function ensureVisibleDoorActors(
   scene: Phaser.Scene,
   state: StaffSystemState,
   metrics: DoorMetrics,
-  scrollX: number,
   isAtMaxSpeed: boolean,
 ): void {
-  const left = scrollX - 120;
-  const right = scrollX + GAME_WIDTH * 2.3;
+  const left = -120;
+  const right = GAME_WIDTH * 2.3;
   const minSlot =
     Math.floor((left + metrics.tilePositionX - metrics.offsetX) / metrics.patternWidth) - 1;
   const maxSlot =
@@ -165,7 +163,7 @@ function ensureVisibleDoorActors(
 
   for (let slot = minSlot; slot <= maxSlot; slot += 1) {
     const worldX = Math.round(
-      worldDoorX(metrics, slot, scrollX) +
+      worldDoorX(metrics, slot) +
         STAFF_X_OFFSET +
         slotTweakX(slot, isAtMaxSpeed),
     );
@@ -277,11 +275,11 @@ function applyStaffDisplayAdjust(
 function tryTriggerPassMotion(
   state: StaffSystemState,
   actor: StaffActor,
-  playerX: number,
+  playerScreenX: number,
   now: number,
 ): void {
   if (actor.hasPlayedPassMotion) return;
-  if (playerX < actor.sprite.x + 16) return;
+  if (playerScreenX < actor.sprite.x + 16) return;
   actor.hasPlayedPassMotion = true;
   // Wave は画面内に入った瞬間のみ発火させるため、通過時は check/cheer のみ抽選
   actor.mode = pickNonConsecutiveMotion(state, ["check-once", "cheer-once"]);
@@ -293,12 +291,11 @@ function tryTriggerPassMotion(
 function tryTriggerWaveOnEnter(
   state: StaffSystemState,
   actor: StaffActor,
-  scrollX: number,
   now: number,
 ): void {
   if (actor.hasCheckedEntryWave) return;
-  const rightEdge = scrollX + GAME_WIDTH;
-  const leftEdge = scrollX - 40;
+  const rightEdge = GAME_WIDTH;
+  const leftEdge = -40;
   if (actor.sprite.x > rightEdge - 8) return;
   if (actor.sprite.x < leftEdge) return;
   actor.hasCheckedEntryWave = true;
@@ -317,11 +314,11 @@ function tryTriggerWelcome(
   scene: Phaser.Scene,
   state: StaffSystemState,
   actor: StaffActor,
-  playerX: number,
+  playerScreenX: number,
   now: number,
 ): void {
   if (actor.hasWelcomed) return;
-  if (playerX < actor.sprite.x + 16) return;
+  if (playerScreenX < actor.sprite.x + 16) return;
   if (now < state.nextGlobalSpeechAt) return;
 
   actor.hasWelcomed = true;
