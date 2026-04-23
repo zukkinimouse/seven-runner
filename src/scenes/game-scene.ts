@@ -230,7 +230,7 @@ export class GameScene extends Phaser.Scene {
     const scrollSpeed = scrollSpeedForElapsedSeconds(difficultyElapsedSec);
     const deltaSec = this.game.loop.delta / 1000;
 
-    updateBackgroundScroll(this.background, scrollSpeed, deltaSec);
+    updateBackgroundScroll(this.background, this, elapsedSec, scrollSpeed, deltaSec);
 
     updatePlayerPhysics(this.player, this.mode, scrollSpeed, now);
     updatePlayerVisual(this.player, this.mode);

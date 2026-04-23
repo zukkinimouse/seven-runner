@@ -46,6 +46,9 @@ export class BootScene extends Phaser.Scene {
     // 背景画像（遠景・中景・近景）を読み込む
     this.load.image("bg-far", "backgrounds/far.webp");
     this.load.image("bg-mid", "backgrounds/mid.webp");
+    this.load.image("bg-mid-dawn", "backgrounds/bg-mid-dawn.webp");
+    this.load.image("bg-mid-day", "backgrounds/bg-mid-day.webp");
+    this.load.image("bg-mid-dusk", "backgrounds/bg-mid-dusk.webp");
     this.load.image("bg-near", "backgrounds/near.webp");
     // タイトル背景（Gemini生成）
     this.load.image("title-bg-gemini", "assets/backgrounds/title-bg-gemini.png");
