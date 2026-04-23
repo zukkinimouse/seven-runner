@@ -10,10 +10,11 @@ import {
 } from "../game-config";
 
 // 姿勢ごとに表示サイズを切り替え、足元基準で地面に合わせる
-const PLAYER_NORMAL_DISPLAY_W = 96;
-const PLAYER_NORMAL_DISPLAY_H = 96;
-const PLAYER_SLIDE_DISPLAY_W = 140;
-const PLAYER_SLIDE_DISPLAY_H = 68;
+// （一回り拡大前の基準: 通常 80×80、スライド 117×57）
+const PLAYER_NORMAL_DISPLAY_W = 90;
+const PLAYER_NORMAL_DISPLAY_H = 90;
+const PLAYER_SLIDE_DISPLAY_W = 127;
+const PLAYER_SLIDE_DISPLAY_H = 67;
 const PLAYER_NORMAL_ORIGIN_Y = 1.18;
 const PLAYER_JUMP_ORIGIN_Y = 1.22;
 const PLAYER_SLIDE_ORIGIN_Y = 1.65;

@@ -6,7 +6,7 @@ import { TitleScene } from "./scenes/title-scene";
 import { GameScene } from "./scenes/game-scene";
 import { ResultScene } from "./scenes/result-scene";
 
-new Phaser.Game({
+const game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: "game-container",
   width: GAME_WIDTH,
@@ -25,3 +25,10 @@ new Phaser.Game({
   },
   scene: [BootScene, TitleScene, GameScene, ResultScene],
 });
+
+// モバイルでアドレスバー表示/非表示や向き変更時に親サイズとキャンバス位置を再計算する
+const refreshGameScale = (): void => {
+  game.scale.refresh();
+};
+window.addEventListener("resize", refreshGameScale);
+window.visualViewport?.addEventListener("resize", refreshGameScale);

@@ -18,7 +18,14 @@ import {
   tryAttack,
   getAttackCooldownRemainingMs,
 } from "../game/entities/player-controller";
-import { sfxAttack, sfxAttackHit, sfxBreak, sfxJump } from "../game/audio/sfx";
+import {
+  sfxAttack,
+  sfxAttackHit,
+  sfxBreak,
+  sfxJump,
+  sfxSnatcherDefeat,
+} from "../game/audio/sfx";
+import { loadSave } from "../game/persistence/storage";
 import { scrollSpeedForElapsedSeconds } from "../game/logic/difficulty";
 import { createTouchControls, type TouchControlsUi } from "../game/entities/touch-controls";
 import { cleanupOldChunks, createRunState, type RunState } from "./game-behavior";
@@ -32,20 +39,29 @@ import { registerCollisions } from "./game-scene-collisions";
 import { runChunkSpawns, transitionToResult } from "./game-scene-flow";
 import { updateHazardVelocities } from "./game-scene-helpers";
 import { handleDesktopKeyboard } from "./game-scene-input";
+import {
+  createStaffSystemState,
+  updateStaffSystem,
+  type StaffSystemState,
+} from "./game-scene-staff";
 import type { SpawnedChunkHandle } from "../game/world/spawn-chunk";
 import { spawnPickupItem } from "../game/world/spawn-chunk";
 
 export class GameScene extends Phaser.Scene {
   // キリン素材の余白ぶんを補正して、足元をレール上に合わせる
-  private static readonly PLAYER_VISUAL_OFFSET_Y = 40;
-  private static readonly FLAME_DISPLAY_W = 82;
-  private static readonly FLAME_DISPLAY_H = 46;
+  private static readonly PLAYER_VISUAL_OFFSET_Y = 33;
+  private static readonly FLAME_DISPLAY_W = 68;
+  private static readonly FLAME_DISPLAY_H = 38;
   private static readonly HUD_FONT_FAMILY = '"Arial Black", "Trebuchet MS", sans-serif';
   private static readonly SNATCHER_TEXTURE_KEYS = [
     "obstacle-snatcher-1",
     "obstacle-snatcher-2",
     "obstacle-snatcher-3",
   ] as const;
+  private static readonly ADVANCED_MODE_YEN_THRESHOLD = 15000;
+  private static readonly ADVANCED_MODE_ELAPSED_BONUS_SEC = 40;
+  private static readonly SNATCHER_HITBOX_SCALE_X = 0.8;
+  private static readonly SNATCHER_HITBOX_SCALE_Y = 0.84;
 
   private player!: Phaser.Types.Physics.Arcade.SpriteWithDynamicBody;
   private mode = createPlayerMode();
@@ -73,6 +89,7 @@ export class GameScene extends Phaser.Scene {
   private pauseOverlayTitle!: Phaser.GameObjects.Text;
   private pauseOverlayHint!: Phaser.GameObjects.Text;
   private isGameplayPaused = false;
+  private pausedAtMs: number | null = null;
   private touchControlsUi?: TouchControlsUi;
   private lastCelebratedComboTier = 0;
   private attackFlame!: Phaser.GameObjects.Image;
@@ -84,11 +101,13 @@ export class GameScene extends Phaser.Scene {
   private keyShift!: Phaser.Input.Keyboard.Key;
   private ended = false;
   private nextEnergyDrinkSpawnAtMs = 0;
-  private lastEnergyDrinkSpawnX = Number.NEGATIVE_INFINITY;
+  /** 直近スポーン時のプレイヤーX（スポーン世界座標ではない。距離クールのバグ防止） */
+  private lastEnergyDrinkSpawnPlayerX = Number.NEGATIVE_INFINITY;
   private nextSnatcherMilestoneYen = 1000;
   private pendingSnatcherSpawns = 0;
   private nextSnatcherSpawnAtMs = 0;
   private snatcherJumpUnlocked = false;
+  private staffSystem: StaffSystemState = createStaffSystemState();
 
   constructor() {
     super("GameScene");
@@ -100,14 +119,16 @@ export class GameScene extends Phaser.Scene {
     this.run = createRunState();
     this.chunks = [];
     this.isGameplayPaused = false;
+    this.pausedAtMs = null;
     this.ended = false;
     this.lastCelebratedComboTier = 0;
     this.nextEnergyDrinkSpawnAtMs = 0;
-    this.lastEnergyDrinkSpawnX = Number.NEGATIVE_INFINITY;
+    this.lastEnergyDrinkSpawnPlayerX = Number.NEGATIVE_INFINITY;
     this.nextSnatcherMilestoneYen = 1000;
     this.pendingSnatcherSpawns = 0;
     this.nextSnatcherSpawnAtMs = 0;
     this.snatcherJumpUnlocked = false;
+    this.staffSystem = createStaffSystemState();
     this.physics.resume();
 
     this.background = createBackgroundLayers(this);
@@ -124,7 +145,7 @@ export class GameScene extends Phaser.Scene {
       "player-run-1",
     );
     this.player.setOrigin(0.5, 1);
-    this.player.setDisplaySize(50, 50);
+    this.player.setDisplaySize(42, 42);
     applyNormalHitbox(this.player);
     this.player.setCollideWorldBounds(false);
     // レール等のワールド要素より手前に描画して、重なりで埋もれて見えるのを防ぐ
@@ -156,14 +177,14 @@ export class GameScene extends Phaser.Scene {
       "pickup-yen-popup",
       (payload: { yen: number }) => {
         // 視認性向上のため、取得時は常にプレイヤー頭上へ表示する
-        this.spawnYenPopup(this.player.x, this.player.y - 88, payload.yen, {
+        this.spawnYenPopup(this.player.x, this.player.y - 73, payload.yen, {
           followPlayer: true,
           isLoss: false,
         });
       },
     );
     this.events.on("steal-yen-popup", (payload: { yen: number }) => {
-      this.spawnYenPopup(this.player.x, this.player.y - 88, payload.yen, {
+      this.spawnYenPopup(this.player.x, this.player.y - 73, payload.yen, {
         followPlayer: true,
         isLoss: true,
       });
@@ -204,7 +225,9 @@ export class GameScene extends Phaser.Scene {
 
     const now = performance.now();
     const elapsedSec = (now - this.run.startMs) / 1000;
-    const scrollSpeed = scrollSpeedForElapsedSeconds(elapsedSec);
+    const difficultyElapsedSec =
+      elapsedSec + this.getAdvancedModeElapsedBonusSec();
+    const scrollSpeed = scrollSpeedForElapsedSeconds(difficultyElapsedSec);
     const deltaSec = this.game.loop.delta / 1000;
 
     updateBackgroundScroll(this.background, scrollSpeed, deltaSec);
@@ -223,9 +246,14 @@ export class GameScene extends Phaser.Scene {
       getAttackCooldownRemainingMs(this.mode, now),
     );
 
-    this.ensureWorld(elapsedSec);
+    this.updateRainbowPickupItems(now);
+    this.updateSpoiledPickupItems(now);
+
+    this.ensureWorld(difficultyElapsedSec);
     this.spawnMilestoneSnatchers(now);
+    this.cullStaleEnergyDrinks(this.cameras.main.scrollX);
     this.spawnTimedEnergyDrink(now, this.player.x);
+    this.updateStaffNpcAndSpeech(now, scrollSpeed);
     cleanupOldChunks(this.chunks, this.cameras.main.scrollX);
 
     this.updateHud(elapsedSec, scrollSpeed);
@@ -235,6 +263,58 @@ export class GameScene extends Phaser.Scene {
       this.ended = true;
       this.endRun(elapsedSec);
     }
+  }
+
+  private getAdvancedModeElapsedBonusSec(): number {
+    if (this.run.cartYen < GameScene.ADVANCED_MODE_YEN_THRESHOLD) return 0;
+    // 1万5000円超え後は難易度計算用の経過時間を底上げして上級モードへ移行する
+    return GameScene.ADVANCED_MODE_ELAPSED_BONUS_SEC;
+  }
+
+  /** 栄養ドリンク取得物のレインボー演出（無敵アイテムの視認性） */
+  private updateRainbowPickupItems(now: number): void {
+    const children = this.items.getChildren() as Phaser.GameObjects.Image[];
+    for (const im of children) {
+      if (!im?.active) continue;
+      const id = im.getData("itemId") as string | undefined;
+      if (id !== "energy_drink") continue;
+      const phase = (now % 2400) / 2400;
+      const r = Math.floor(210 + 45 * Math.sin(phase * Math.PI * 2));
+      const g = Math.floor(
+        210 + 45 * Math.sin(phase * Math.PI * 2 + (2 * Math.PI) / 3),
+      );
+      const b = Math.floor(
+        210 + 45 * Math.sin(phase * Math.PI * 2 + (4 * Math.PI) / 3),
+      );
+      im.setTint(Phaser.Display.Color.GetColor(r, g, b));
+      im.setAlpha(1);
+    }
+  }
+
+  /** 腐敗アイテムは紫ライティングをゆっくり脈動させて判別しやすくする */
+  private updateSpoiledPickupItems(now: number): void {
+    const children = this.items.getChildren() as Phaser.GameObjects.Image[];
+    for (const im of children) {
+      if (!im?.active) continue;
+      if (im.getData("isSpoiled") !== true) continue;
+      const phase = (now % 1600) / 1600;
+      const pulse = 0.86 + 0.14 * (0.5 + 0.5 * Math.sin(phase * Math.PI * 2));
+      im.setTint(0x8b5cf6);
+      im.setAlpha(pulse);
+    }
+  }
+
+  /** コンビニ前の店員NPCと吹き出しを更新する */
+  private updateStaffNpcAndSpeech(now: number, scrollSpeed: number): void {
+    updateStaffSystem(
+      this,
+      this.background.mid,
+      this.staffSystem,
+      this.player.x,
+      this.cameras.main.scrollX,
+      now,
+      scrollSpeed >= 330,
+    );
   }
 
   private createHud(): void {
@@ -305,15 +385,27 @@ export class GameScene extends Phaser.Scene {
     return baseNowMs + Phaser.Math.Between(6000, 8000);
   }
 
+  /** 画面外左に残った栄養ドリンクを破棄（未取得のまま hasActive が固まるのを防ぐ） */
+  private cullStaleEnergyDrinks(scrollX: number): void {
+    const margin = 420;
+    const children = this.items.getChildren() as Phaser.GameObjects.Image[];
+    for (const im of children) {
+      if (!im?.active) continue;
+      if (im.getData("itemId") !== "energy_drink") continue;
+      if (im.x < scrollX - margin) im.destroy();
+    }
+  }
+
   private spawnTimedEnergyDrink(nowMs: number, playerX: number): void {
     if (nowMs < this.nextEnergyDrinkSpawnAtMs) return;
     if (this.hasActiveEnergyDrink()) return;
-    if (playerX - this.lastEnergyDrinkSpawnX < 1200) return;
+    // プレイヤー進行距離ベース（旧実装はスポーンXを入れて条件が常に未達になりやすかった）
+    if (playerX - this.lastEnergyDrinkSpawnPlayerX < 1200) return;
 
     const spawnX = playerX + GAME_WIDTH * 0.9;
     const spawnY = Phaser.Math.Between(290, 390);
     spawnPickupItem(this, this.items, spawnX, spawnY, "energy_drink");
-    this.lastEnergyDrinkSpawnX = spawnX;
+    this.lastEnergyDrinkSpawnPlayerX = playerX;
     this.nextEnergyDrinkSpawnAtMs = this.pickNextEnergyDrinkSpawnMs(nowMs);
   }
 
@@ -347,7 +439,7 @@ export class GameScene extends Phaser.Scene {
         ? Phaser.Utils.Array.GetRandom(availableKeys)
         : "obstacle-cone";
     const snatcher = this.add.image(0, 0, textureKey);
-    const displaySize = 84;
+    const displaySize = 110;
     const spawnX = this.player.x + Phaser.Math.Between(720, 860);
     snatcher.setDisplaySize(displaySize, displaySize);
     snatcher.x = spawnX;
@@ -356,13 +448,27 @@ export class GameScene extends Phaser.Scene {
     const body = snatcher.body as Phaser.Physics.Arcade.Body;
     body.setAllowGravity(false);
     body.setImmovable(true);
-    body.setSize(
-      snatcher.displayWidth * 0.78,
-      snatcher.displayHeight * 0.82,
-      true,
-    );
+    this.applySnatcherHitbox(snatcher, body);
     snatcher.setData("kind", "shoplifter");
     this.hazards.add(snatcher);
+  }
+
+  private applySnatcherHitbox(
+    snatcher: Phaser.GameObjects.Image,
+    body: Phaser.Physics.Arcade.Body,
+  ): void {
+    const scaleX = Math.abs(snatcher.scaleX) || 1;
+    const scaleY = Math.abs(snatcher.scaleY) || 1;
+    const desiredHitboxW = snatcher.displayWidth * GameScene.SNATCHER_HITBOX_SCALE_X;
+    const desiredHitboxH = snatcher.displayHeight * GameScene.SNATCHER_HITBOX_SCALE_Y;
+    // setSize はテクスチャ座標基準なので、表示ピクセルから逆算してズレを防ぐ
+    const bodyWidthTex = desiredHitboxW / scaleX;
+    const bodyHeightTex = desiredHitboxH / scaleY;
+    body.setSize(bodyWidthTex, bodyHeightTex);
+    // 正面衝突時の抜けを防ぐため、Xは中央寄せ・Yは足元基準で下端を合わせる
+    const offsetXTex = (snatcher.width - bodyWidthTex) / 2;
+    const offsetYTex = snatcher.height - bodyHeightTex;
+    body.setOffset(offsetXTex, offsetYTex);
   }
 
   private updateSnatcherJumpUnlock(): void {
@@ -441,6 +547,53 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  private playSnatcherDefeatEffect(hz: Phaser.GameObjects.Image): void {
+    hz.setData("isDefeated", true);
+    hz.setData("isSnatcherJumping", false);
+    this.tweens.killTweensOf(hz);
+    hz.setTexture("obstacle-snatcher-defeat");
+    const body = (hz as Phaser.GameObjects.Image & {
+      body?: Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | null;
+    }).body;
+    if (body) body.enable = false;
+
+    // スローに抜けるよう本体を少し長めに残し、残像を重ねる
+    const spawnAfterImage = (delayMs: number, alpha: number): void => {
+      this.time.delayedCall(delayMs, () => {
+        if (!hz.active) return;
+        const ghost = this.add
+          .image(hz.x, hz.y, "obstacle-snatcher-defeat")
+          .setDisplaySize(hz.displayWidth, hz.displayHeight)
+          .setAlpha(alpha)
+          .setDepth(8);
+        this.tweens.add({
+          targets: ghost,
+          x: ghost.x + 36,
+          y: ghost.y - 10,
+          alpha: 0,
+          duration: 280,
+          ease: "Quad.Out",
+          onComplete: () => ghost.destroy(),
+        });
+      });
+    };
+    spawnAfterImage(40, 0.42);
+    spawnAfterImage(95, 0.3);
+    spawnAfterImage(150, 0.22);
+
+    this.tweens.add({
+      targets: hz,
+      x: hz.x + 44,
+      y: hz.y - 14,
+      alpha: 0,
+      duration: 380,
+      ease: "Cubic.Out",
+      onComplete: () => {
+        if (hz.active) hz.destroy();
+      },
+    });
+  }
+
   private updateAttackFlameAndHits(now: number): void {
     if (now > this.mode.attackUntil) {
       this.attackFlame.setVisible(false);
@@ -448,18 +601,18 @@ export class GameScene extends Phaser.Scene {
     }
 
     // 口元に炎素材を追従表示する
-    const mouthX = this.player.x + 28;
-    const mouthY = this.player.y - 90;
+    const mouthX = this.player.x + 23;
+    const mouthY = this.player.y - 75;
     this.attackFlame
-      .setPosition(mouthX + 54, mouthY)
+      .setPosition(mouthX + 45, mouthY)
       .setDisplaySize(GameScene.FLAME_DISPLAY_W, GameScene.FLAME_DISPLAY_H)
       .setVisible(true);
 
     // 真下への巻き込みを減らすため、判定を前方寄り＆やや上方向に寄せる
     const isFalling = this.player.body.velocity.y > 120;
-    const flameHitboxX = mouthX + 12;
-    const flameHitboxY = mouthY - 24;
-    const flameHitboxWidth = GameScene.FLAME_DISPLAY_W + 28;
+    const flameHitboxX = mouthX + 10;
+    const flameHitboxY = mouthY - 20;
+    const flameHitboxWidth = GameScene.FLAME_DISPLAY_W + 23;
     const flameHitboxHeight = isFalling
       ? GameScene.FLAME_DISPLAY_H - 2
       : GameScene.FLAME_DISPLAY_H + 8;
@@ -495,6 +648,8 @@ export class GameScene extends Phaser.Scene {
       hitDestructibles.push(dst);
     }
 
+    let defeatedSnatcher = false;
+    let otherFlameHazard = false;
     for (const hz of hitHazards) {
       if (!hz.active) continue;
       this.spawnAttackHitEffect(hz.x, hz.y, 0xffd166);
@@ -508,23 +663,18 @@ export class GameScene extends Phaser.Scene {
         });
         this.spawnYenPopup(hz.x, hz.y - 22, bonusYen);
         // ひったくりは撃破差分を一瞬表示してから消し、視認性を上げる
-        hz.setData("isDefeated", true);
-        hz.setData("isSnatcherJumping", false);
-        this.tweens.killTweensOf(hz);
-        hz.setTexture("obstacle-snatcher-defeat");
-        const body = (hz as Phaser.GameObjects.Image & {
-          body?: Phaser.Physics.Arcade.Body;
-        }).body;
-        if (body) body.enable = false;
-        this.time.delayedCall(120, () => {
-          if (hz.active) hz.destroy();
-        });
+        this.playSnatcherDefeatEffect(hz);
+        defeatedSnatcher = true;
         continue;
       }
       hz.destroy();
+      otherFlameHazard = true;
     }
 
-    if (hitHazards.length > 0 || hitDestructibles.length > 0) {
+    if (defeatedSnatcher) {
+      sfxSnatcherDefeat();
+    }
+    if (otherFlameHazard || hitDestructibles.length > 0) {
       sfxAttackHit();
     }
 
@@ -719,7 +869,7 @@ export class GameScene extends Phaser.Scene {
       ease: "Cubic.Out",
       onUpdate: () => {
         const anchorX = followPlayer ? this.player.x : x;
-        const anchorY = followPlayer ? this.player.y - 88 : y;
+        const anchorY = followPlayer ? this.player.y - 73 : y;
         popup.setPosition(anchorX, anchorY - anim.rise);
         popup.setAlpha(anim.alpha);
       },
@@ -819,6 +969,7 @@ export class GameScene extends Phaser.Scene {
   private togglePause(): void {
     this.isGameplayPaused = !this.isGameplayPaused;
     if (this.isGameplayPaused) {
+      this.pausedAtMs = performance.now();
       this.physics.pause();
       this.pauseButtonText.setText("▶ 再開");
       this.pauseButtonBg.setFillStyle(0x0f766e, 0.94);
@@ -826,6 +977,11 @@ export class GameScene extends Phaser.Scene {
       this.pauseButtonText.setScale(1);
       this.setPauseOverlayVisible(true);
       return;
+    }
+    if (this.pausedAtMs !== null) {
+      // 一時停止中に進んだ実時間ぶんを開始時刻へ加算し、経過時間表示を止める
+      this.run.startMs += performance.now() - this.pausedAtMs;
+      this.pausedAtMs = null;
     }
     this.physics.resume();
     this.pauseButtonText.setText("⏸ 一時停止");
@@ -902,30 +1058,40 @@ export class GameScene extends Phaser.Scene {
       })
       .setOrigin(1, 0)
       .setScrollFactor(0)
-      .setDepth(135);
-    this.tweens.add({
+      .setDepth(135)
+      // 初動を抑えてからゆっくり弾けるようにする（スローモーション感）
+      .setScale(0.88);
+    this.tweens.chain({
       targets: burst,
-      scale: 1.25,
-      alpha: 0,
-      y: burst.y - 22,
-      duration: 700,
-      ease: "Back.Out",
+      tweens: [
+        {
+          scale: 1.08,
+          duration: 520,
+          ease: "Sine.Out",
+        },
+        {
+          scale: 1.42,
+          alpha: 0,
+          y: burst.y - 40,
+          duration: 980,
+          ease: "Cubic.InOut",
+        },
+      ],
       onComplete: () => burst.destroy(),
     });
   }
 
   private startLoopBgm(): void {
-    // シーン再開時の多重再生を防ぎ、常に1トラックだけ鳴らす
+    const save = loadSave();
+    const bgmVolume = save.muted ? 0 : save.bgmVolume;
+    // シーン再開時の多重再生を防ぎ、常に現在設定の音量で1トラックだけ鳴らす
     const existing = this.sound.get("bgm-main");
-    if (existing?.isPlaying) {
-      this.bgm = existing;
-    } else {
-      this.bgm = this.sound.add("bgm-main", {
-        loop: true,
-        volume: 0.35,
-      });
-      this.bgm.play();
-    }
+    if (existing) existing.destroy();
+    this.bgm = this.sound.add("bgm-main", {
+      loop: true,
+      volume: bgmVolume,
+    });
+    this.bgm.play();
 
     // シーン離脱時に確実に停止して、次回開始を安定させる
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.stopLoopBgm());

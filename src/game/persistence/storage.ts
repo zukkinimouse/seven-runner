@@ -23,6 +23,15 @@ export function loadSave(): SaveDataV1 {
         : [],
       lastPlayedAt:
         typeof obj.lastPlayedAt === "string" ? obj.lastPlayedAt : "",
+      bgmVolume:
+        typeof obj.bgmVolume === "number"
+          ? Math.max(0, Math.min(1, obj.bgmVolume))
+          : 0.35,
+      seVolume:
+        typeof obj.seVolume === "number"
+          ? Math.max(0, Math.min(1, obj.seVolume))
+          : 1,
+      muted: obj.muted === true,
     };
   } catch {
     return { ...DEFAULT_SAVE };
@@ -32,6 +41,22 @@ export function loadSave(): SaveDataV1 {
 export function writeSave(next: SaveDataV1): void {
   if (typeof window === "undefined" || !window.localStorage) return;
   window.localStorage.setItem(SAVE_KEY, JSON.stringify(next));
+}
+
+export function writeAudioSettings(args: {
+  bgmVolume: number;
+  seVolume: number;
+  muted: boolean;
+}): SaveDataV1 {
+  const prev = loadSave();
+  const next: SaveDataV1 = {
+    ...prev,
+    bgmVolume: Math.max(0, Math.min(1, args.bgmVolume)),
+    seVolume: Math.max(0, Math.min(1, args.seVolume)),
+    muted: args.muted,
+  };
+  writeSave(next);
+  return next;
 }
 
 export function mergeBestRank(a: CouponRank, b: CouponRank): CouponRank {

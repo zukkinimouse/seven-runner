@@ -8,7 +8,7 @@ import { comboMultiplierFromCount, rankFromTotalYen } from "../game/logic/score"
 import type { PlayerMode } from "../game/entities/player-controller";
 import type { RunResultPayload } from "../game/types";
 import type { SpawnedChunkHandle } from "../game/world/spawn-chunk";
-import { sfxPickup } from "../game/audio/sfx";
+import { sfxPickup, sfxSpoiledPickup } from "../game/audio/sfx";
 
 export function isEnergyDrinkItem(itemId: string): boolean {
   return itemId === "energy_drink";
@@ -53,20 +53,37 @@ export function collectItem(
   run: RunState,
   itemId: string,
   now: number,
+  isSpoiled = false,
 ): number {
   const def = getItemDefinition(itemId);
   if (!def) return 0;
-  run.comboCount += 1;
-  run.lastItemAt = now;
+  const beforeYen = run.cartYen;
+  let delta = 0;
 
-  const mult = comboMultiplierFromCount(run.comboCount);
-  run.lastComboMult = mult;
-  const add = Math.floor(def.price * mult);
-  run.cartYen += add;
-  run.receiptLines.push({ name: getReceiptItemName(itemId), yen: add });
+  if (isSpoiled) {
+    // 腐敗アイテムは負債のみ加算（コンボは進めない）
+    delta = -Math.floor(def.price * 0.5);
+  } else {
+    run.comboCount += 1;
+    run.lastItemAt = now;
+    const mult = comboMultiplierFromCount(run.comboCount);
+    run.lastComboMult = mult;
+    delta = Math.floor(def.price * mult);
+  }
+
+  run.cartYen = Math.max(0, run.cartYen + delta);
+  const appliedYen = run.cartYen - beforeYen;
+  const itemName = isSpoiled
+    ? `期限切れ ${getReceiptItemName(itemId)}`
+    : getReceiptItemName(itemId);
+  run.receiptLines.push({ name: itemName, yen: appliedYen });
   run.collectedItemIds.push(itemId);
-  sfxPickup();
-  return add;
+  if (isSpoiled) {
+    sfxSpoiledPickup();
+  } else {
+    sfxPickup();
+  }
+  return appliedYen;
 }
 
 export function stealFromCart(run: RunState, now: number, mode: PlayerMode): number {
@@ -78,10 +95,23 @@ export function stealFromCart(run: RunState, now: number, mode: PlayerMode): num
   return lost;
 }
 
+/** 箱ドロップ用：弁当は小だけ偏りやすいので中・大をやや多めに抽選する */
 export function randomItemId(): string {
   const pool = ITEM_DEFINITIONS.filter((item) => item.id !== "energy_drink");
-  const idx = Math.floor(Math.random() * pool.length);
-  return pool[idx].id;
+  const weightFor = (id: string): number => {
+    if (id === "bento_small") return 1;
+    if (id === "bento_medium") return 2.1;
+    if (id === "bento_large") return 2.1;
+    return 1;
+  };
+  const weights = pool.map((it) => weightFor(it.id));
+  const total = weights.reduce((a, b) => a + b, 0);
+  let roll = Math.random() * total;
+  for (let i = 0; i < pool.length; i += 1) {
+    roll -= weights[i]!;
+    if (roll <= 0) return pool[i]!.id;
+  }
+  return pool[pool.length - 1]!.id;
 }
 
 export function buildResultPayload(

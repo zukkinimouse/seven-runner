@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { CHUNK_WIDTH, GROUND_Y } from "../game-config";
 import { getItemTextureKey } from "../config/item-definitions";
 import type { ChunkTemplate } from "../types";
+import { sfxEnergyPop } from "../audio/sfx";
 
 export type SpawnedChunkHandle = {
   baseX: number;
@@ -24,10 +25,35 @@ const ITEM_RANDOM_OFFSET_X = 50;
 const ITEM_MIN_SPACING = 150;
 const OBSTACLE_RANDOM_OFFSET_X = 60;
 const OBSTACLE_MIN_SPACING = 260;
-const ITEM_MIN_Y = 250;
+const ITEM_MIN_Y = 255;
 const ITEM_MAX_Y = 430;
-const BOX_GROUND_SINK_Y = 6;
-const TRASH_GROUND_SINK_Y = 6;
+const BOX_GROUND_SINK_Y = 5;
+const TRASH_GROUND_SINK_Y = 5;
+// spawnTrashRow と同じ値（障害物予約幅の計算用）
+const TRASH_BAG_DISPLAY_SIZE = 53;
+const TRASH_BAG_LAYOUT_GAP = 6;
+const SPOILED_DROP_CHANCE_BY_DIFFICULTY: Record<number, number> = {
+  1: 0.08,
+  2: 0.1,
+  3: 0.12,
+  4: 0.15,
+  5: 0.18,
+};
+
+function spoiledChanceForDifficulty(difficulty: number): number {
+  return SPOILED_DROP_CHANCE_BY_DIFFICULTY[difficulty] ?? 0.12;
+}
+
+function shouldSpawnSpoiledItem(itemId: string, chance: number): boolean {
+  if (itemId === "energy_drink") return false;
+  return Math.random() < chance;
+}
+
+function applySpoiledItemVisual(item: Phaser.GameObjects.Image): void {
+  // 腐敗アイテムは紫寄りのライティングに固定
+  item.setTint(0x8b5cf6);
+  item.setAlpha(0.94);
+}
 
 function applyCenteredHitbox(
   sprite: Phaser.GameObjects.Image,
@@ -52,39 +78,49 @@ function applyItemDisplaySize(
 ): void {
   if (texKey === "item-bento") {
     if (itemId === "bento_small") {
-      item.setDisplaySize(isPickup ? 30 : 34, isPickup ? 30 : 34);
+      item.setDisplaySize(isPickup ? 35 : 38, isPickup ? 35 : 38);
       return;
     }
     if (itemId === "bento_medium") {
-      item.setDisplaySize(isPickup ? 42 : 46, isPickup ? 42 : 46);
+      item.setDisplaySize(isPickup ? 47 : 51, isPickup ? 47 : 51);
       return;
     }
     if (itemId === "bento_large") {
-      item.setDisplaySize(isPickup ? 54 : 58, isPickup ? 54 : 58);
+      item.setDisplaySize(isPickup ? 63 : 69, isPickup ? 63 : 69);
       return;
     }
     // 未定義IDは中サイズとして扱って表示崩れを防ぐ
-    item.setDisplaySize(isPickup ? 42 : 46, isPickup ? 42 : 46);
+    item.setDisplaySize(isPickup ? 47 : 51, isPickup ? 47 : 51);
     return;
   }
   if (texKey === "item-onigiri") {
     // おにぎりは中・大の2段階で視覚的に差が出るようにする
     if (itemId === "onigiri_medium") {
-      item.setDisplaySize(isPickup ? 26 : 30, isPickup ? 26 : 30);
+      item.setDisplaySize(isPickup ? 33 : 36, isPickup ? 33 : 36);
       return;
     }
     if (itemId === "onigiri_large") {
-      item.setDisplaySize(isPickup ? 38 : 42, isPickup ? 38 : 42);
+      item.setDisplaySize(isPickup ? 49 : 54, isPickup ? 49 : 54);
       return;
     }
-    item.setDisplaySize(isPickup ? 26 : 30, isPickup ? 26 : 30);
+    item.setDisplaySize(isPickup ? 33 : 36, isPickup ? 33 : 36);
     return;
   }
   if (texKey === "item-drink") {
-    item.setDisplaySize(isPickup ? 24 : 26, isPickup ? 42 : 46);
+    if (itemId === "energy_drink") {
+      // 栄養ドリンクは無敵アイテムとして一回り大きく（横幅のみやや細め）
+      item.setDisplaySize(isPickup ? 32 : 34, isPickup ? 48 : 52);
+      return;
+    }
+    // 細長ドリンクと弁当類のシルエット差をはっきりさせる
+    item.setDisplaySize(isPickup ? 17 : 19, isPickup ? 28 : 32);
     return;
   }
-  item.setDisplaySize(isPickup ? 34 : 36, isPickup ? 34 : 36);
+  if (texKey === "item-sandwich") {
+    item.setDisplaySize(isPickup ? 36 : 40, isPickup ? 36 : 40);
+    return;
+  }
+  item.setDisplaySize(isPickup ? 24 : 27, isPickup ? 24 : 27);
 }
 
 function randomInt(min: number, max: number): number {
@@ -166,23 +202,37 @@ function findAvailableObstacleX(
   return null;
 }
 
+/** チャンク内の横方向予約幅（見た目より少し狭くして障害物干渉で落ちにくくする） */
+function itemReserveWidth(itemId: string, texKey: string): number {
+  const s = itemDisplaySizeByItem(itemId, texKey);
+  if (texKey === "item-bento") {
+    return Math.max(24, Math.round(s.width * 0.82));
+  }
+  return s.width;
+}
+
 function itemDisplaySizeByItem(
   itemId: string,
   texKey: string,
 ): { width: number; height: number } {
+  // itemId はドリンク系で分岐に使う（texKey だけでは栄養ドリンクと区別できない）
   if (texKey === "item-bento") {
-    if (itemId === "bento_small") return { width: 34, height: 34 };
-    if (itemId === "bento_medium") return { width: 46, height: 46 };
-    if (itemId === "bento_large") return { width: 58, height: 58 };
-    return { width: 46, height: 46 };
+    if (itemId === "bento_small") return { width: 38, height: 38 };
+    if (itemId === "bento_medium") return { width: 51, height: 51 };
+    if (itemId === "bento_large") return { width: 69, height: 69 };
+    return { width: 51, height: 51 };
   }
   if (texKey === "item-onigiri") {
-    if (itemId === "onigiri_medium") return { width: 30, height: 30 };
-    if (itemId === "onigiri_large") return { width: 42, height: 42 };
-    return { width: 30, height: 30 };
+    if (itemId === "onigiri_medium") return { width: 36, height: 36 };
+    if (itemId === "onigiri_large") return { width: 54, height: 54 };
+    return { width: 36, height: 36 };
   }
-  if (texKey === "item-drink") return { width: 26, height: 46 };
-  return { width: 36, height: 36 };
+  if (texKey === "item-drink") {
+    if (itemId === "energy_drink") return { width: 34, height: 52 };
+    return { width: 19, height: 32 };
+  }
+  if (texKey === "item-sandwich") return { width: 40, height: 40 };
+  return { width: 27, height: 27 };
 }
 
 function canPlaceItemX(
@@ -229,8 +279,8 @@ function spawnHazard(
 ): void {
   const hz = scene.add.image(x, y, hazardTextureKey(kind));
   hz.setDisplaySize(
-    kind === "shoplifter" ? 74 : 56,
-    kind === "shoplifter" ? 74 : 56,
+    kind === "shoplifter" ? 72 : 47,
+    kind === "shoplifter" ? 72 : 47,
   );
   placeOnGround(hz);
   scene.physics.add.existing(hz);
@@ -258,8 +308,8 @@ function spawnBoxStack(
   // 理不尽さを避けるため、単体は中サイズ中心・段積みは少し小さめでランダム化
   const boxSize =
     stack === 1
-      ? Phaser.Utils.Array.GetRandom([64, 68, 72])
-      : Phaser.Utils.Array.GetRandom([50, 54, 58]);
+      ? Phaser.Utils.Array.GetRandom([53, 57, 60])
+      : Phaser.Utils.Array.GetRandom([42, 45, 48]);
   const stackedStep = Math.round(boxSize * 0.73);
   for (let level = 0; level < stack; level += 1) {
     const box = scene.add.image(centerX, 0, "obstacle-box");
@@ -287,9 +337,9 @@ function spawnTrashRow(
   centerX: number,
   count: 1 | 2 | 3,
 ): void {
-  const bagSize = 64;
+  const bagSize = TRASH_BAG_DISPLAY_SIZE;
   // 連続配置時は重なりを許容し、間隔を詰めて密度を上げる
-  const gap = 6;
+  const gap = TRASH_BAG_LAYOUT_GAP;
   const spacing = bagSize + gap;
   const startX = centerX - ((count - 1) * spacing) / 2;
 
@@ -323,6 +373,7 @@ export function spawnChunkIntoScene(
   },
 ): SpawnedChunkHandle {
   const root = scene.add.container(0, 0);
+  const spoiledChance = spoiledChanceForDifficulty(template.difficulty);
   const itemSpawnXs = randomizeLocalXs(
     template.items.map((it) => it.x),
     ITEM_RANDOM_OFFSET_X,
@@ -363,8 +414,8 @@ export function spawnChunkIntoScene(
     const rightConeLocalX = b.x + b.width + 18;
     const leftConeX = baseX + leftConeLocalX;
     const rightConeX = baseX + rightConeLocalX;
-    reserveObstacleRange(occupiedObstacles, leftConeLocalX, 56);
-    reserveObstacleRange(occupiedObstacles, rightConeLocalX, 56);
+    reserveObstacleRange(occupiedObstacles, leftConeLocalX, 47);
+    reserveObstacleRange(occupiedObstacles, rightConeLocalX, 47);
     spawnHazard(scene, groups, root, "biker", leftConeX, GROUND_Y);
     spawnHazard(scene, groups, root, "biker", rightConeX, GROUND_Y);
   }
@@ -377,10 +428,10 @@ export function spawnChunkIntoScene(
       spawnHazard(scene, groups, root, h.kind, spawnX, h.y);
       continue;
     }
-    if (!canReserveObstacleRange(occupiedObstacles, localX, 58, OBSTACLE_MIN_SPACING)) {
+    if (!canReserveObstacleRange(occupiedObstacles, localX, 48, OBSTACLE_MIN_SPACING)) {
       continue;
     }
-    reserveObstacleRange(occupiedObstacles, localX, 58);
+    reserveObstacleRange(occupiedObstacles, localX, 48);
     spawnHazard(scene, groups, root, h.kind, spawnX, h.y);
   }
 
@@ -391,7 +442,10 @@ export function spawnChunkIntoScene(
     const boxStack = d.kind === "box" ? (d.stack ?? 1) : (randomInt(1, 3) as 1 | 2 | 3);
     const trashCount =
       d.kind === "trash_bag" ? (d.count ?? 1) : (randomInt(1, 3) as 1 | 2 | 3);
-    const visualWidth = spawnAsBox ? 60 : trashCount * 56 + (trashCount - 1) * 18;
+    const visualWidth = spawnAsBox
+      ? 50
+      : trashCount * TRASH_BAG_DISPLAY_SIZE +
+          (trashCount - 1) * TRASH_BAG_LAYOUT_GAP;
     const localX = destructibleSpawnXs[i];
     const spawnLocalX = findAvailableObstacleX(
       occupiedObstacles,
@@ -415,16 +469,26 @@ export function spawnChunkIntoScene(
     const it = template.items[i];
     const texKey = getItemTextureKey(it.itemId);
     const size = itemDisplaySizeByItem(it.itemId, texKey);
+    const reserveW = itemReserveWidth(it.itemId, texKey);
     const desiredLocalX = itemSpawnXs[i];
-    const itemLocalX = findAvailableItemX(
-      occupiedObstacles,
-      occupiedItems,
-      desiredLocalX,
-      size.width,
-    );
-    if (itemLocalX === null) continue;
+    // 広い占有幅で失敗したら段階的に狭く再試行（大弁当が障害物付きで落ちるのを防ぐ）
+    const tryWidths = [reserveW, 26, 24, 22];
+    let itemLocalX: number | null = null;
+    let usedReserve = reserveW;
+    for (const w of tryWidths) {
+      itemLocalX = findAvailableItemX(occupiedObstacles, occupiedItems, desiredLocalX, w);
+      if (itemLocalX !== null) {
+        usedReserve = w;
+        break;
+      }
+    }
+    // 最終手段: 干渉チェックを諦めてテンプレ座標付近に出す（非表示よりマシ）
+    if (itemLocalX === null) {
+      itemLocalX = clamp(desiredLocalX, 150, CHUNK_WIDTH - 150);
+      usedReserve = Math.min(tryWidths[tryWidths.length - 1]!, size.width);
+    }
 
-    reserveObstacleRange(occupiedItems, itemLocalX, size.width);
+    reserveObstacleRange(occupiedItems, itemLocalX, usedReserve);
     const randomY = clamp(
       it.y + randomInt(-90, 80),
       ITEM_MIN_Y,
@@ -432,12 +496,15 @@ export function spawnChunkIntoScene(
     );
     const item = scene.add.image(baseX + itemLocalX, randomY, texKey);
     applyItemDisplaySize(item, it.itemId, texKey, false);
+    const isSpoiled = shouldSpawnSpoiledItem(it.itemId, spoiledChance);
+    if (isSpoiled) applySpoiledItemVisual(item);
     scene.physics.add.existing(item);
     const ib = item.body as Phaser.Physics.Arcade.Body;
     ib.setAllowGravity(false);
     ib.setImmovable(true);
     applyCenteredHitbox(item, ib, 0.82, 0.82);
     item.setData("itemId", it.itemId);
+    item.setData("isSpoiled", isSpoiled);
     groups.items.add(item);
     root.add(item);
   }
@@ -456,11 +523,32 @@ export function spawnPickupItem(
   const texKey = getItemTextureKey(itemId);
   const item = scene.add.image(x, y, texKey);
   applyItemDisplaySize(item, itemId, texKey, true);
+  // 破壊ドロップは中難度相当の腐敗率で固定
+  const isSpoiled = shouldSpawnSpoiledItem(itemId, 0.12);
+  if (isSpoiled) applySpoiledItemVisual(item);
   scene.physics.add.existing(item);
   const ib = item.body as Phaser.Physics.Arcade.Body;
   ib.setAllowGravity(false);
   ib.setImmovable(true);
   applyCenteredHitbox(item, ib, 0.84, 0.84);
   item.setData("itemId", itemId);
+  item.setData("isSpoiled", isSpoiled);
+  // 栄養ドリンクは無敵アイテムとして目立たせる（色は GameScene でレインボー上書き）
+  // 表示後の scale を基準に ±10% だけ脈動（setDisplaySize 後の倍率を壊さない）
+  if (itemId === "energy_drink") {
+    item.setDepth(11);
+    sfxEnergyPop();
+    const sx = item.scaleX;
+    const sy = item.scaleY;
+    scene.tweens.add({
+      targets: item,
+      scaleX: sx * 1.1,
+      scaleY: sy * 1.1,
+      duration: 1000,
+      ease: "Sine.InOut",
+      yoyo: true,
+      repeat: -1,
+    });
+  }
   items.add(item);
 }

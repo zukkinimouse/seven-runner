@@ -30,6 +30,14 @@ export class BootScene extends Phaser.Scene {
     this.load.image("player-attack-3", "assets/player/attack-open-mouth-3.png");
     this.load.image("player-attack-4", "assets/player/attack-open-mouth-4.png");
     this.load.image("player-attack-flame", "assets/player/attack-flame.png");
+    this.load.image("staff-idle", "assets/staff-idle.png");
+    this.load.image("staff-check", "assets/staff-check.png");
+    this.load.image("staff-cheer", "assets/staff-cheer.png");
+    this.load.image("staff-wave-1", "assets/staff-wave-1.png");
+    this.load.image("staff-wave-2", "assets/staff-wave-2.png");
+    this.load.image("staff-wave-3", "assets/staff-wave-3.png");
+    // タイトル用BGMとプレイ中BGMはキーを分離して管理する
+    this.load.audio("bgm-title", "assets/audio/midnight-snack-run.mp3");
     this.load.audio("bgm-main", "assets/audio/midnight-snack-dash.mp3");
     for (let i = 1; i <= 8; i += 1) {
       this.load.image(`player-run-${i}`, `assets/player/giraffe-run-${i}.png`);

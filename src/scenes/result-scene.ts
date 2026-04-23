@@ -1,5 +1,10 @@
 import Phaser from "phaser";
 import type { RunResultPayload } from "../game/types";
+import {
+  sfxResultCoinTick,
+  sfxResultRankShine,
+  sfxResultTotalBig,
+} from "../game/audio/sfx";
 
 type RankVisualTheme = {
   primary: string;
@@ -11,6 +16,16 @@ type RankVisualTheme = {
 
 export class ResultScene extends Phaser.Scene {
   private payload?: RunResultPayload;
+  private canNavigate = false;
+
+  private setObjectsVisible(
+    objects: Phaser.GameObjects.GameObject[],
+    visible: boolean,
+  ): void {
+    for (const obj of objects) {
+      (obj as Phaser.GameObjects.GameObject & Phaser.GameObjects.Components.Visible).setVisible(visible);
+    }
+  }
 
   constructor() {
     super("ResultScene");
@@ -22,6 +37,7 @@ export class ResultScene extends Phaser.Scene {
 
   create(): void {
     const payload = this.payload;
+    this.canNavigate = false;
     if (!payload) {
       this.scene.start("TitleScene");
       return;
@@ -77,12 +93,48 @@ export class ResultScene extends Phaser.Scene {
     })();
     const receiptRightX = receiptLeftX + receiptWidth - 8;
     const receiptLineH = isCompact ? 20 : 24;
-    const maxItemRows = isCompact ? 8 : 14;
-    let rowY = receiptBodyY;
+    const ctaHeight = isCompact ? 44 : 54;
+    const ctaWidth = Math.min(receiptWidth * 0.44, isCompact ? 150 : 188);
+    const ctaGap = isCompact ? 14 : 18;
+    const receiptCenterX = receiptLeftX + receiptWidth / 2;
+    // 明細は可変件数なので固定窓でスクロール表示にする
+    const receiptCtaY = frameBottom - (isCompact ? 74 : 86);
+    const scrollTopY = receiptBodyY;
+    const scrollBottomY = receiptCtaY - 18;
+    const scrollHeight = Math.max(120, scrollBottomY - scrollTopY);
+    this.add
+      .rectangle(receiptCenterX, scrollTopY + scrollHeight / 2, receiptWidth, scrollHeight, 0xffffff, 0.38)
+      .setStrokeStyle(1, 0xd1d5db, 0.9);
+    this.add
+      .text(receiptRightX, scrollTopY - 22, "ホイール/ドラッグでスクロール", {
+        fontSize: isCompact ? "11px" : "12px",
+        color: "#6b7280",
+        fontStyle: "bold",
+      })
+      .setOrigin(1, 0);
+    const receiptScrollContainer = this.add.container(0, 0);
+    const scrollMaskShape = this.add
+      .rectangle(receiptCenterX, scrollTopY + scrollHeight / 2, receiptWidth, scrollHeight, 0xffffff, 0)
+      .setVisible(false);
+    receiptScrollContainer.setMask(scrollMaskShape.createGeometryMask());
+    let rowY = 0;
+    const revealSteps: Array<() => void> = [];
+    const registerReveal = (
+      objects: Phaser.GameObjects.GameObject[],
+      onReveal?: () => void,
+    ): void => {
+      this.setObjectsVisible(objects, false);
+      revealSteps.push(() => {
+        this.setObjectsVisible(objects, true);
+        onReveal?.();
+      });
+    };
     const addReceiptRow = (name: string, amount: string, options?: {
       emphasizeAmount?: boolean;
       amountColor?: string;
       nameColor?: string;
+      playCoinSe?: boolean;
+      playBigSe?: boolean;
     }): void => {
       const nameSize = isCompact ? "13px" : "15px";
       const amountSize = options?.emphasizeAmount
@@ -92,15 +144,15 @@ export class ResultScene extends Phaser.Scene {
         : isCompact
           ? "15px"
           : "19px";
-      this.add
+      const nameText = this.add
         .text(receiptLeftX, rowY, name, {
           fontSize: nameSize,
           color: options?.nameColor ?? "#1f2937",
           fontStyle: "bold",
         })
         .setOrigin(0, 0);
-      this.add
-        .text(receiptRightX, rowY, amount, {
+      const amountText = this.add
+        .text(receiptRightX, scrollTopY + rowY, amount, {
           fontSize: amountSize,
           color: options?.amountColor ?? "#111111",
           fontStyle: "bold",
@@ -108,36 +160,109 @@ export class ResultScene extends Phaser.Scene {
           strokeThickness: 3,
         })
         .setOrigin(1, 0);
+      nameText.setY(scrollTopY + rowY);
+      receiptScrollContainer.add([nameText, amountText]);
+      registerReveal(
+        [nameText, amountText],
+        options?.playBigSe
+          ? () => sfxResultTotalBig()
+          : options?.playCoinSe
+            ? () => sfxResultCoinTick()
+            : undefined,
+      );
       rowY += receiptLineH;
     };
     const addReceiptDivider = (): void => {
-      this.add.line(0, 0, receiptLeftX, rowY + 8, receiptRightX, rowY + 8, 0x9ca3af, 1).setOrigin(0, 0);
+      const divider = this.add
+        .line(0, 0, receiptLeftX, scrollTopY + rowY + 8, receiptRightX, scrollTopY + rowY + 8, 0x9ca3af, 1)
+        .setOrigin(0, 0);
+      receiptScrollContainer.add(divider);
+      registerReveal([divider]);
       rowY += 14;
     };
 
     addReceiptRow("商品", "金額", { amountColor: "#374151", nameColor: "#374151" });
     addReceiptDivider();
-    for (const l of aggregatedLines.slice(0, maxItemRows)) {
+    for (const l of aggregatedLines) {
       const sign = l.totalYen < 0 ? "-" : "";
       const abs = Math.abs(l.totalYen);
       const quantity = l.count > 1 ? ` x${l.count}` : "";
       addReceiptRow(`${l.name}${quantity}`, `${sign}¥${abs.toLocaleString("ja-JP")}`, {
         amountColor: l.totalYen < 0 ? "#2563eb" : "#111111",
+        playCoinSe: true,
       });
     }
     addReceiptDivider();
-    addReceiptRow("小計（明細合計）", `¥${payload.subtotalYen.toLocaleString("ja-JP")}`);
-    addReceiptRow("コンボ倍率", `×${payload.comboMultiplier.toFixed(1)}`);
+    addReceiptRow("小計（明細合計）", `¥${payload.subtotalYen.toLocaleString("ja-JP")}`, {
+      playCoinSe: true,
+    });
+    addReceiptRow("コンボ倍率", `×${payload.comboMultiplier.toFixed(1)}`, {
+      playCoinSe: true,
+    });
     addReceiptDivider();
     addReceiptRow("合計", `¥${payload.totalYen.toLocaleString("ja-JP")}`, {
       emphasizeAmount: true,
       amountColor: "#b91c1c",
+      playBigSe: true,
     });
-    const receiptCenterX = receiptLeftX + receiptWidth / 2;
-    const receiptCtaY = rowY + (isCompact ? 24 : 30);
-    const ctaHeight = isCompact ? 44 : 54;
-    const ctaWidth = Math.min(receiptWidth * 0.44, isCompact ? 150 : 188);
-    const ctaGap = isCompact ? 14 : 18;
+    const scrollMaxOffset = Math.max(0, rowY + 8 - scrollHeight);
+    let scrollOffset = 0;
+    const scrollTrack = this.add
+      .rectangle(receiptRightX + 10, scrollTopY + scrollHeight / 2, 6, scrollHeight, 0xe5e7eb, 0.9)
+      .setStrokeStyle(1, 0x9ca3af, 0.9);
+    const minThumbH = Math.max(26, scrollHeight * 0.18);
+    const thumbH =
+      scrollMaxOffset > 0
+        ? Math.max(minThumbH, scrollHeight * (scrollHeight / (rowY + 8)))
+        : scrollHeight;
+    const scrollThumb = this.add
+      .rectangle(receiptRightX + 10, scrollTopY + thumbH / 2, 6, thumbH, 0xf59e0b, 0.95)
+      .setStrokeStyle(1, 0xb45309, 0.95);
+    const hasScrollableContent = scrollMaxOffset > 0;
+    scrollTrack.setVisible(hasScrollableContent);
+    scrollThumb.setVisible(hasScrollableContent);
+    const setReceiptScroll = (next: number): void => {
+      scrollOffset = Phaser.Math.Clamp(next, 0, scrollMaxOffset);
+      receiptScrollContainer.y = -scrollOffset;
+      if (!hasScrollableContent) return;
+      const movable = scrollHeight - thumbH;
+      const progress = scrollOffset / scrollMaxOffset;
+      scrollThumb.setY(scrollTopY + thumbH / 2 + movable * progress);
+    };
+    const isPointerInScrollArea = (x: number, y: number): boolean =>
+      x >= receiptLeftX &&
+      x <= receiptLeftX + receiptWidth &&
+      y >= scrollTopY &&
+      y <= scrollTopY + scrollHeight;
+    this.input.on("wheel", (
+      _pointer: Phaser.Input.Pointer,
+      _gameObjects: Phaser.GameObjects.GameObject[],
+      _deltaX: number,
+      deltaY: number,
+    ) => {
+      const p = this.input.activePointer;
+      if (!isPointerInScrollArea(p.x, p.y)) return;
+      setReceiptScroll(scrollOffset + deltaY * 0.75);
+    });
+    const scrollHitArea = this.add
+      .rectangle(receiptCenterX, scrollTopY + scrollHeight / 2, receiptWidth, scrollHeight, 0x000000, 0)
+      .setInteractive({ useHandCursor: true });
+    let isDraggingScroll = false;
+    let dragStartY = 0;
+    let dragStartOffset = 0;
+    scrollHitArea.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+      isDraggingScroll = true;
+      dragStartY = pointer.y;
+      dragStartOffset = scrollOffset;
+    });
+    this.input.on("pointerup", () => {
+      isDraggingScroll = false;
+    });
+    this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
+      if (!isDraggingScroll) return;
+      const dragDelta = pointer.y - dragStartY;
+      setReceiptScroll(dragStartOffset - dragDelta);
+    });
     const createResultActionButton = (args: {
       x: number;
       label: string;
@@ -164,7 +289,10 @@ export class ResultScene extends Phaser.Scene {
         })
         .setOrigin(0.5)
         .setDepth(10);
-      box.on("pointerdown", () => args.onClick());
+      box.on("pointerdown", () => {
+        if (!this.canNavigate) return;
+        args.onClick();
+      });
       this.tweens.add({
         targets: [box, text, shadow],
         scale: 1.03,
@@ -177,21 +305,21 @@ export class ResultScene extends Phaser.Scene {
     };
     const retryX = receiptCenterX - (ctaWidth / 2 + ctaGap / 2);
     const titleX = receiptCenterX + (ctaWidth / 2 + ctaGap / 2);
-    createResultActionButton({
+    const retryButton = createResultActionButton({
       x: retryX,
       label: "もう一度",
       fillColor: 0xfde68a,
       strokeColor: 0xf59e0b,
       onClick: () => this.scene.start("GameScene"),
     });
-    createResultActionButton({
+    const titleButton = createResultActionButton({
       x: titleX,
       label: "タイトルへ",
       fillColor: 0xfff7d6,
       strokeColor: 0xfb923c,
       onClick: () => this.scene.start("TitleScene"),
     });
-    this.add
+    const keyboardHint = this.add
       .text(receiptCenterX, receiptCtaY + ctaHeight / 2 + (isCompact ? 22 : 26), "SPACE: もう一度 / T: タイトルへ", {
         fontSize: isCompact ? "12px" : "14px",
         color: "#6b7280",
@@ -208,7 +336,7 @@ export class ResultScene extends Phaser.Scene {
     const couponBubbleW = Math.min(rightPanelW - 30, isCompact ? frameW * 0.62 : 238);
     const couponBubbleH = isCompact ? 104 : 132;
 
-    this.add
+    const resultTitle = this.add
       .text(rightPanelX, resultTitleY, "RESULT", {
         fontSize: isCompact ? "28px" : "34px",
         color: "#fef3c7",
@@ -218,7 +346,7 @@ export class ResultScene extends Phaser.Scene {
       })
       .setOrigin(0.5, 0);
 
-    this.add
+    const rankLabel = this.add
       .text(rightPanelX, rankLabelY, rankTheme.label, {
         fontSize: isCompact ? "18px" : "22px",
         color: rankTheme.accent,
@@ -239,17 +367,7 @@ export class ResultScene extends Phaser.Scene {
       .setOrigin(0.5, 0)
       .setShadow(0, 6, "#000000", 0.35, true, true);
 
-    this.tweens.add({
-      targets: rankText,
-      scale: 1.08,
-      angle: 1.5,
-      duration: 700,
-      ease: "Sine.InOut",
-      yoyo: true,
-      repeat: -1,
-    });
-
-    this.add
+    const couponHeading = this.add
       .text(rightPanelX, couponHeadingY, "獲得クーポン", {
         fontSize: isCompact ? "20px" : "24px",
         color: "#fef9c3",
@@ -264,7 +382,7 @@ export class ResultScene extends Phaser.Scene {
       .setStrokeStyle(4, rankTheme.shadow, 0.8);
     couponBubble.setRounded?.(24);
 
-    this.add
+    const couponText = this.add
       .text(rightPanelX, couponBubbleY, payload.couponText, {
         fontSize: isCompact ? "24px" : "28px",
         color: rankTheme.primary,
@@ -275,11 +393,60 @@ export class ResultScene extends Phaser.Scene {
         strokeThickness: 5,
       })
       .setOrigin(0.5, 0.5);
+    const rankRelatedObjects: Phaser.GameObjects.GameObject[] = [
+      resultTitle,
+      rankLabel,
+      rankText,
+      couponHeading,
+      couponBubble,
+      couponText,
+    ];
+    this.setObjectsVisible(rankRelatedObjects, false);
+    const ctaObjects = [...retryButton, ...titleButton, keyboardHint];
+    this.setObjectsVisible(ctaObjects, false);
+    const revealNextStep = (idx: number): void => {
+      if (idx >= revealSteps.length) {
+        this.setObjectsVisible(rankRelatedObjects, true);
+        sfxResultRankShine();
+        rankText.setAlpha(0);
+        rankText.setScale(0.72);
+        rankText.setAngle(-8);
+        this.tweens.add({
+          targets: rankText,
+          alpha: 1,
+          scale: 1.12,
+          angle: 0,
+          duration: 360,
+          ease: "Back.Out",
+          onComplete: () => {
+            this.tweens.add({
+              targets: rankText,
+              scale: 1.08,
+              angle: 1.5,
+              duration: 700,
+              ease: "Sine.InOut",
+              yoyo: true,
+              repeat: -1,
+            });
+          },
+        });
+        this.time.delayedCall(180, () =>
+          this.spawnResultConfetti(rightPanelX, rankValueY + 58, rankTheme.shadow),
+        );
+        this.time.delayedCall(220, () => {
+          this.setObjectsVisible(ctaObjects, true);
+          this.canNavigate = true;
+          this.input.keyboard?.once("keydown-SPACE", () => this.scene.start("GameScene"));
+          this.input.keyboard?.once("keydown-T", () => this.scene.start("TitleScene"));
+        });
+        return;
+      }
+      revealSteps[idx]?.();
+      const delay = idx < 2 ? 120 : idx < revealSteps.length - 3 ? 130 : 170;
+      this.time.delayedCall(delay, () => revealNextStep(idx + 1));
+    };
+    revealNextStep(0);
 
-    this.spawnResultConfetti(rightPanelX, rankValueY + 58, rankTheme.shadow);
-
-    this.input.keyboard?.once("keydown-SPACE", () => this.scene.start("GameScene"));
-    this.input.keyboard?.once("keydown-T", () => this.scene.start("TitleScene"));
   }
 
   private getRankVisualTheme(rank: string): RankVisualTheme {

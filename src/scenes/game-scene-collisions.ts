@@ -31,19 +31,23 @@ export function registerCollisions(args: {
   scene.physics.add.collider(player, platforms);
 
   scene.physics.add.overlap(player, items, (_p, obj) => {
-    const item = obj as Phaser.GameObjects.Rectangle & {
+    const item = obj as Phaser.GameObjects.Image & {
       body: Phaser.Physics.Arcade.Body;
     };
     const id = item.getData("itemId") as string | undefined;
+    const isSpoiled = item.getData("isSpoiled") === true;
     if (!id) return;
     if (isEnergyDrinkItem(id)) {
       // 栄養ドリンク取得後は2秒間の専用無敵を付与する
       grantEnergyDrinkInvincibility(mode, performance.now());
     }
-    const addYen = collectItem(run, id, performance.now());
+    const addYen = collectItem(run, id, performance.now(), isSpoiled);
     if (addYen > 0) {
       // プレイヤー頭上に金額ポップアップを出すため、加算額だけ通知する
       scene.events.emit("pickup-yen-popup", { yen: addYen });
+    } else if (addYen < 0) {
+      // 腐敗アイテムなどの減額もHUDで即時フィードバックする
+      scene.events.emit("steal-yen-popup", { yen: Math.abs(addYen) });
     }
     item.destroy();
   });
@@ -56,6 +60,10 @@ export function registerCollisions(args: {
     const now = performance.now();
 
     if (kind === "shoplifter") {
+      // 撃破演出に入った個体は接触減額対象から外す
+      if (hz.getData("isDefeated") === true) return;
+      // 攻撃受付中は撃破処理側を優先し、接触減額と競合させない
+      if (now <= mode.attackUntil) return;
       // 無敵中はひったくり判定自体を無効化する
       if (now < mode.invUntil) {
         const lastRepelledAt = (hz.getData("lastRepelledAt") as number | undefined) ?? 0;
@@ -80,8 +88,8 @@ export function registerCollisions(args: {
       const lostYen = stealFromCart(run, now, mode);
       if (lostYen > 0) {
         scene.events.emit("steal-yen-popup", { yen: lostYen });
+        sfxSteal();
       }
-      sfxSteal();
       return;
     }
 
@@ -93,7 +101,7 @@ export function registerCollisions(args: {
   });
 
   scene.physics.add.overlap(player, destructibles, (_p, obj) => {
-    const box = obj as Phaser.GameObjects.Rectangle & {
+    const box = obj as Phaser.GameObjects.Image & {
       body: Phaser.Physics.Arcade.Body;
     };
     const now = performance.now();
@@ -112,8 +120,8 @@ export function registerCollisions(args: {
     const y = box.y - 40;
     box.destroy();
     sfxBreak();
-    // オブジェクト破壊時のドロップは50%で発生させる
-    if (Math.random() < 0.5) {
+    // オブジェクト破壊時のドロップは30%に抑える
+    if (Math.random() < 0.3) {
       spawnPickupItem(scene, items, x, y, randomItemId());
     }
   });

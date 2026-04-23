@@ -9,7 +9,8 @@ export const CHUNK_TEMPLATES: readonly ChunkTemplate[] = [
     items: [
       { itemId: "onigiri_medium", x: 200, y: 400 },
       { itemId: "sandwich_tamago", x: 450, y: 400 },
-      { itemId: "bento_small", x: 650, y: 400 },
+      // 序盤でも中弁当が出るようにする（小だけが続きやすいのを緩和）
+      { itemId: "bento_medium", x: 650, y: 400 },
     ],
     hazards: [],
     destructibles: [
@@ -29,6 +30,7 @@ export const CHUNK_TEMPLATES: readonly ChunkTemplate[] = [
     items: [
       { itemId: "onigiri_medium", x: 120, y: 400 },
       { itemId: "sandwich_tamago", x: 560, y: 400 },
+      { itemId: "bento_large", x: 340, y: 360 },
     ],
     hazards: [],
     destructibles: [{ kind: "trash_bag", x: 620, y: 420, count: 2 }],

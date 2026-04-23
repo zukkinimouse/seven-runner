@@ -10,6 +10,9 @@ export type SaveDataV1 = {
   bestRank: CouponRank;
   unlockedItems: string[];
   lastPlayedAt: string;
+  bgmVolume: number;
+  seVolume: number;
+  muted: boolean;
 };
 
 export const DEFAULT_SAVE: SaveDataV1 = {
@@ -19,4 +22,7 @@ export const DEFAULT_SAVE: SaveDataV1 = {
   bestRank: "D",
   unlockedItems: [],
   lastPlayedAt: "",
+  bgmVolume: 0.35,
+  seVolume: 1,
+  muted: false,
 };

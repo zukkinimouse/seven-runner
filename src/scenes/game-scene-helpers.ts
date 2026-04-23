@@ -26,6 +26,12 @@ export function updateHazardVelocities(
       body.setVelocityX(0);
       return true;
     }
+    if (kind === "falling-trash") {
+      // 落下障害物は重力のみで落とす
+      body.setVelocityX(0);
+      return true;
+    }
+    if (kind !== "shoplifter") return true;
 
     body.setVelocityX(-(scrollSpeed + 20));
 
