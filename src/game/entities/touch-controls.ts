@@ -24,7 +24,7 @@ export function createTouchControls(
   const h = scene.scale.height;
   const isMobileLayout = w <= 768;
   // スマホ版は等倍のまま、操作しやすいように少しだけ拡大する
-  const buttonSize = isMobileLayout ? 98 : 68;
+  const buttonSize = isMobileLayout ? 103 : 68;
   const edgePadding = isMobileLayout ? 14 : 10;
   const buttonGap = isMobileLayout ? 14 : 10;
   const buttonYBase = h - edgePadding - buttonSize / 2;

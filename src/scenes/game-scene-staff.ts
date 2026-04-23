@@ -5,6 +5,7 @@ type StaffMode = "idle" | "wave-loop" | "check-once" | "cheer-once";
 
 type StaffActor = {
   slot: number;
+  tweakX: number;
   sprite: Phaser.GameObjects.Image;
   mode: StaffMode;
   modeStartedAt: number;
@@ -26,8 +27,11 @@ const WAVE_KEYS = ["staff-wave-1", "staff-wave-2", "staff-wave-3", "staff-wave-2
 const BG_MID_TILE_SCALE_X = 0.9;
 const DOOR_TEXTURE_X = 1090;
 // 店舗ごとの微調整（px）
-// 店舗位置の見た目補正は固定パターンを繰り返す（周回で累積させない）
-const STAFF_SLOT_TWEAK_PATTERN = [0, 100, 160, 225, 295] as const;
+// 店舗位置の見た目補正（近い将来のスポーン範囲だけで計算して、周回で破綻させない）
+const STAFF_TWEAK_FIRST = 0;
+const STAFF_TWEAK_SECOND = 100;
+const STAFF_TWEAK_STEP_BASE = 60;
+const STAFF_TWEAK_STEP_GROW = 5;
 // ドア左側に寄せるためのオフセット
 const STAFF_X_OFFSET = -14;
 const STAFF_Y = GROUND_Y - 2;
@@ -86,7 +90,7 @@ export function updateStaffSystem(
     const worldX = Math.round(
       worldDoorX(metrics, actor.slot) +
         STAFF_X_OFFSET +
-        slotTweakX(actor.slot),
+        actor.tweakX,
     );
     actor.sprite.setX(worldX);
     syncBubbleToActor(actor);
@@ -129,9 +133,19 @@ function worldDoorX(metrics: DoorMetrics, slot: number): number {
 }
 
 function slotTweakX(slot: number): number {
-  const pattern = STAFF_SLOT_TWEAK_PATTERN;
-  const idx = ((slot % pattern.length) + pattern.length) % pattern.length;
-  return pattern[idx] ?? 0;
+  if (slot <= 0) return STAFF_TWEAK_FIRST;
+  if (slot === 1) return STAFF_TWEAK_SECOND;
+  let value = STAFF_TWEAK_SECOND;
+  for (let i = 2; i <= slot; i += 1) {
+    const step = STAFF_TWEAK_STEP_BASE + STAFF_TWEAK_STEP_GROW * (i - 1);
+    value += step;
+  }
+  return value;
+}
+
+function calcRelativeSlot(slot: number, minSlot: number): number {
+  // 画面内スポーン帯の先頭を0基準にして、ループ周回で補正値が暴走しないようにする
+  return Math.max(0, slot - minSlot);
 }
 
 function ensureVisibleDoorActors(
@@ -147,10 +161,12 @@ function ensureVisibleDoorActors(
     Math.ceil((right + metrics.tilePositionX - metrics.offsetX) / metrics.patternWidth) + 1;
 
   for (let slot = minSlot; slot <= maxSlot; slot += 1) {
+    const relativeSlot = calcRelativeSlot(slot, minSlot);
+    const tweakX = slotTweakX(relativeSlot);
     const worldX = Math.round(
       worldDoorX(metrics, slot) +
         STAFF_X_OFFSET +
-        slotTweakX(slot),
+        tweakX,
     );
     if (worldX < left || worldX > right) continue;
     const exists = state.actors.some((actor) => actor.slot === slot && actor.sprite.active);
@@ -163,6 +179,7 @@ function ensureVisibleDoorActors(
       .setDepth(STAFF_DEPTH);
     state.actors.push({
       slot,
+      tweakX,
       sprite,
       mode: "idle",
       modeStartedAt: performance.now(),
