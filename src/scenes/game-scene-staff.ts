@@ -39,7 +39,7 @@ const STAFF_Y = GROUND_Y - 2;
 const STAFF_DISPLAY_W = 61;
 const STAFF_DISPLAY_H = 145;
 const STAFF_DEPTH = -5;
-const STAFF_SCROLL_FACTOR = 1;
+const STAFF_SCROLL_FACTOR = 0;
 // 余白差による見た目ズレを吸収する表示補正（チアを基準に微調整）
 // 縦横を個別調整できるよう X/Y を分離する
 const STAFF_IDLE_SCALE_X = 1.0;
@@ -77,13 +77,12 @@ export function updateStaffSystem(
   bgMid: Phaser.GameObjects.TileSprite,
   state: StaffSystemState,
   playerX: number,
-  scrollX: number,
   now: number,
   isAtMaxSpeed: boolean,
 ): void {
   const metrics = calcDoorMetrics(scene, bgMid);
   if (!metrics) return;
-  ensureVisibleDoorActors(scene, state, metrics, scrollX, isAtMaxSpeed);
+  ensureVisibleDoorActors(scene, state, metrics, isAtMaxSpeed);
 
   const kept: StaffActor[] = [];
   for (const actor of state.actors) {
@@ -95,13 +94,13 @@ export function updateStaffSystem(
     );
     actor.sprite.setX(worldX);
     syncBubbleToActor(actor);
-    if (worldX < scrollX - 360) {
+    if (worldX < -360) {
       actor.bubble?.destroy(true);
       actor.sprite.destroy();
       continue;
     }
 
-    tryTriggerWaveOnEnter(state, actor, scrollX, now);
+    tryTriggerWaveOnEnter(state, actor, now);
     tryTriggerPassMotion(state, actor, playerX, now);
     updateStaffMotion(actor, now);
     tryTriggerWelcome(scene, state, actor, playerX, now);
@@ -151,11 +150,10 @@ function ensureVisibleDoorActors(
   scene: Phaser.Scene,
   state: StaffSystemState,
   metrics: DoorMetrics,
-  scrollX: number,
   isAtMaxSpeed: boolean,
 ): void {
-  const left = scrollX - 120;
-  const right = scrollX + GAME_WIDTH * 2.3;
+  const left = -120;
+  const right = GAME_WIDTH * 2.3;
   const minSlot =
     Math.floor((left + metrics.tilePositionX - metrics.offsetX) / metrics.patternWidth) - 1;
   const maxSlot =
@@ -291,12 +289,11 @@ function tryTriggerPassMotion(
 function tryTriggerWaveOnEnter(
   state: StaffSystemState,
   actor: StaffActor,
-  scrollX: number,
   now: number,
 ): void {
   if (actor.hasCheckedEntryWave) return;
-  const rightEdge = scrollX + GAME_WIDTH;
-  const leftEdge = scrollX - 40;
+  const rightEdge = GAME_WIDTH;
+  const leftEdge = -40;
   if (actor.sprite.x > rightEdge - 8) return;
   if (actor.sprite.x < leftEdge) return;
   actor.hasCheckedEntryWave = true;

@@ -1,5 +1,6 @@
 /** Phaser ゲームのエントリ（Vite が読み込む） */
 import Phaser from "phaser";
+import { registerSW } from "virtual:pwa-register";
 import { GAME_HEIGHT, GAME_WIDTH } from "./game/game-config";
 import { BootScene } from "./scenes/boot-scene";
 import { TitleScene } from "./scenes/title-scene";
@@ -32,3 +33,14 @@ const refreshGameScale = (): void => {
 };
 window.addEventListener("resize", refreshGameScale);
 window.visualViewport?.addEventListener("resize", refreshGameScale);
+
+// PWA 更新を自動適用して、手動キャッシュ削除なしで最新を反映する
+const updateServiceWorker = registerSW({
+  immediate: true,
+  onNeedRefresh() {
+    updateServiceWorker(true);
+  },
+  onOfflineReady() {
+    // オフライン準備完了時の追加処理は不要
+  },
+});
