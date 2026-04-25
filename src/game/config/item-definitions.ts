@@ -21,12 +21,35 @@ export function getItemDefinition(id: string): ItemDefinition | undefined {
 
 /** itemId を画像キーへ寄せる（運用を手軽にするためカテゴリ単位） */
 export function getItemTextureKey(id: string): string {
-  if (id.startsWith("onigiri_")) return "item-onigiri";
+  if (id.startsWith("onigiri_")) {
+    return pickRandomTextureKey([
+      "item-onigiri",
+      "item-onigiri-konbu",
+      "item-onigiri-tuna",
+    ]);
+  }
   // 弁当系は「sandwich」を含む名前より先に判定（将来の id 衝突を防ぐ）
-  if (id.startsWith("bento_")) return "item-bento";
-  if (id.includes("sandwich")) return "item-sandwich";
+  if (id.startsWith("bento_")) {
+    return pickRandomTextureKey([
+      "item-bento",
+      "item-bento-karaage",
+      "item-bento-shake",
+    ]);
+  }
+  if (id.includes("sandwich")) {
+    return pickRandomTextureKey([
+      "item-sandwich",
+      "item-sandwich-egg",
+      "item-sandwich-tuna",
+    ]);
+  }
   if (id === "energy_drink") return "item-drink";
   return "item-bento";
+}
+
+function pickRandomTextureKey(keys: readonly string[]): string {
+  const index = Math.floor(Math.random() * keys.length);
+  return keys[index] ?? keys[0]!;
 }
 
 /** レシート表示名はカテゴリ単位で統一する */

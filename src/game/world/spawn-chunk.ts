@@ -76,7 +76,7 @@ function applyItemDisplaySize(
   texKey: string,
   isPickup: boolean,
 ): void {
-  if (texKey === "item-bento") {
+  if (isBentoTextureKey(texKey)) {
     if (itemId === "bento_small") {
       item.setDisplaySize(isPickup ? 35 : 38, isPickup ? 35 : 38);
       return;
@@ -93,7 +93,7 @@ function applyItemDisplaySize(
     item.setDisplaySize(isPickup ? 47 : 51, isPickup ? 47 : 51);
     return;
   }
-  if (texKey === "item-onigiri") {
+  if (isOnigiriTextureKey(texKey)) {
     // おにぎりは中・大の2段階で視覚的に差が出るようにする
     if (itemId === "onigiri_medium") {
       item.setDisplaySize(isPickup ? 33 : 36, isPickup ? 33 : 36);
@@ -116,7 +116,7 @@ function applyItemDisplaySize(
     item.setDisplaySize(isPickup ? 17 : 19, isPickup ? 28 : 32);
     return;
   }
-  if (texKey === "item-sandwich") {
+  if (isSandwichTextureKey(texKey)) {
     item.setDisplaySize(isPickup ? 36 : 40, isPickup ? 36 : 40);
     return;
   }
@@ -205,7 +205,7 @@ function findAvailableObstacleX(
 /** チャンク内の横方向予約幅（見た目より少し狭くして障害物干渉で落ちにくくする） */
 function itemReserveWidth(itemId: string, texKey: string): number {
   const s = itemDisplaySizeByItem(itemId, texKey);
-  if (texKey === "item-bento") {
+  if (isBentoTextureKey(texKey)) {
     return Math.max(24, Math.round(s.width * 0.82));
   }
   return s.width;
@@ -216,13 +216,13 @@ function itemDisplaySizeByItem(
   texKey: string,
 ): { width: number; height: number } {
   // itemId はドリンク系で分岐に使う（texKey だけでは栄養ドリンクと区別できない）
-  if (texKey === "item-bento") {
+  if (isBentoTextureKey(texKey)) {
     if (itemId === "bento_small") return { width: 38, height: 38 };
     if (itemId === "bento_medium") return { width: 51, height: 51 };
     if (itemId === "bento_large") return { width: 69, height: 69 };
     return { width: 51, height: 51 };
   }
-  if (texKey === "item-onigiri") {
+  if (isOnigiriTextureKey(texKey)) {
     if (itemId === "onigiri_medium") return { width: 36, height: 36 };
     if (itemId === "onigiri_large") return { width: 54, height: 54 };
     return { width: 36, height: 36 };
@@ -231,8 +231,20 @@ function itemDisplaySizeByItem(
     if (itemId === "energy_drink") return { width: 34, height: 52 };
     return { width: 19, height: 32 };
   }
-  if (texKey === "item-sandwich") return { width: 40, height: 40 };
+  if (isSandwichTextureKey(texKey)) return { width: 40, height: 40 };
   return { width: 27, height: 27 };
+}
+
+function isBentoTextureKey(texKey: string): boolean {
+  return texKey.startsWith("item-bento");
+}
+
+function isOnigiriTextureKey(texKey: string): boolean {
+  return texKey.startsWith("item-onigiri");
+}
+
+function isSandwichTextureKey(texKey: string): boolean {
+  return texKey.startsWith("item-sandwich");
 }
 
 function canPlaceItemX(

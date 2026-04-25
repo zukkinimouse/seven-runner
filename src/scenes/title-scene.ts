@@ -47,24 +47,24 @@ export class TitleScene extends Phaser.Scene {
     const settingsButtonSize = isCompact ? 44 : 48;
     const settingsX = width - 20 - settingsButtonSize;
     const settingsY = isCompact ? 52 : 40;
-    const logoFontSize = isCompact ? 36 : 48;
     const scoreFontSize = isCompact ? 13 : 16;
-    const startFontSize = isCompact ? 18 : 24;
-    const howToFontSize = isCompact ? 14 : 18;
     const noticeFontSize = isCompact ? 13 : 16;
 
-    this.add
-      .text(centerX, logoY, "コンビニランナー", {
-        fontSize: `${logoFontSize}px`,
-        color: "#fffdf5",
-        stroke: "#7c5a00",
-        strokeThickness: 10,
-        fontStyle: "bold",
-        align: "center",
-      })
-      .setOrigin(0.5)
-      .setDepth(21)
-      .setShadow(0, 4, "#1f2937", 0.85, true, true);
+    if (!this.createTitleLogo(centerX, logoY, isCompact)) {
+      const logoFontSize = isCompact ? 36 : 48;
+      this.add
+        .text(centerX, logoY, "コンビニランナー", {
+          fontSize: `${logoFontSize}px`,
+          color: "#fffdf5",
+          stroke: "#7c5a00",
+          strokeThickness: 10,
+          fontStyle: "bold",
+          align: "center",
+        })
+        .setOrigin(0.5)
+        .setDepth(21)
+        .setShadow(0, 4, "#1f2937", 0.85, true, true);
+    }
 
     this.add
       .text(scoreAreaX, scoreAreaY, `ハイスコア: ¥${save.highScore.toLocaleString("ja-JP")}`, {
@@ -90,70 +90,123 @@ export class TitleScene extends Phaser.Scene {
       .setDepth(21)
       .setShadow(0, 2, "#000000", 0.72, true, true);
 
-    const startButton = this.createRoundButton({
+    const startImageButton = this.createImageButton({
       x: centerX,
       y: startY,
+      normalKey: "title-btn-start-normal",
+      hoverKey: "title-btn-start-hover",
+      pressedKey: "title-btn-start-pressed",
       width: isCompact ? 160 : 200,
       height: isCompact ? 45 : 56,
-      radius: isCompact ? 22 : 28,
-      label: "スタート",
-      labelSize: startFontSize,
-      palette,
       onClick: () => {
         if (!this.canStart) return;
         this.scene.start("GameScene");
       },
     });
-    this.tweens.add({
-      targets: [startButton.top, startButton.text],
-      scale: 1.04,
-      duration: 740,
-      ease: "Sine.InOut",
-      yoyo: true,
-      repeat: -1,
-    });
+    if (startImageButton) {
+      this.tweens.add({
+        targets: [startImageButton],
+        scaleX: startImageButton.scaleX * 1.04,
+        scaleY: startImageButton.scaleY * 1.04,
+        duration: 740,
+        ease: "Sine.InOut",
+        yoyo: true,
+        repeat: -1,
+      });
+    } else {
+      const startButton = this.createRoundButton({
+        x: centerX,
+        y: startY,
+        width: isCompact ? 160 : 200,
+        height: isCompact ? 45 : 56,
+        radius: isCompact ? 22 : 28,
+        label: "スタート",
+        labelSize: isCompact ? 18 : 24,
+        palette,
+        onClick: () => {
+          if (!this.canStart) return;
+          this.scene.start("GameScene");
+        },
+      });
+      this.tweens.add({
+        targets: [startButton.top, startButton.text],
+        scale: 1.04,
+        duration: 740,
+        ease: "Sine.InOut",
+        yoyo: true,
+        repeat: -1,
+      });
+    }
 
-    this.createRoundButton({
+    const openHowTo = (): void => {
+      if (!this.canStart) return;
+      if (this.isInfoModalOpen) return;
+      this.openInfoModal({
+        title: "遊び方",
+        lines: [
+          "・ジャンプ：SPACE / ↑ / JUMPボタン / 左画面半分タップ",
+          "・攻撃：X / ATTACKボタン（クールタイムあり）",
+          "・ひったくりは無敵中なら被害なし",
+        ],
+      });
+    };
+    const howToImageButton = this.createImageButton({
       x: centerX,
       y: howToY,
+      normalKey: "title-btn-howto-normal",
+      hoverKey: "title-btn-howto-hover",
+      pressedKey: "title-btn-howto-pressed",
       width: isCompact ? 128 : 160,
       height: isCompact ? 35 : 44,
-      radius: isCompact ? 18 : 22,
-      label: "遊び方",
-      labelSize: howToFontSize,
-      palette,
-      onClick: () => {
-        if (!this.canStart) return;
-        if (this.isInfoModalOpen) return;
-        this.openInfoModal({
-          title: "遊び方",
-          lines: [
-            "・ジャンプ：SPACE / ↑ / JUMPボタン / 左画面半分タップ",
-            "・攻撃：X / ATTACKボタン（クールタイムあり）",
-            "・ひったくりは無敵中なら被害なし",
-          ],
-        });
-      },
+      onClick: openHowTo,
     });
+    if (!howToImageButton) {
+      this.createRoundButton({
+        x: centerX,
+        y: howToY,
+        width: isCompact ? 128 : 160,
+        height: isCompact ? 35 : 44,
+        radius: isCompact ? 18 : 22,
+        label: "遊び方",
+        labelSize: isCompact ? 14 : 18,
+        palette,
+        onClick: openHowTo,
+      });
+    }
 
-    this.createRoundButton({
-      x: settingsX,
-      y: settingsY,
+    const openSettings = (): void => {
+      if (!this.canStart) return;
+      if (this.isInfoModalOpen) return;
+      this.openInfoModal({
+        title: "設定",
+        lines: ["各種今後追加予定"],
+      });
+    };
+    const settingsImageButton = this.createImageButton({
+      x: settingsX + settingsButtonSize / 2,
+      y: settingsY + settingsButtonSize / 2,
+      normalKey: "title-btn-settings-normal",
+      hoverKey: "title-btn-settings-hover",
+      pressedKey: "title-btn-settings-pressed",
+      disabledKey: "title-btn-settings-disabled",
       width: settingsButtonSize,
       height: settingsButtonSize,
-      radius: settingsButtonSize / 2,
-      label: "⚙",
-      labelSize: isCompact ? 18 : 22,
-      palette,
-      onClick: () => {
-        if (!this.canStart) return;
-        if (this.isInfoModalOpen) return;
-        this.openInfoModal({
-          title: "設定",
-          lines: ["各種今後追加予定"],
-        });
-      },
+      onClick: openSettings,
+      allowClickWhen: () => this.canStart && !this.isInfoModalOpen,
     });
+    if (!settingsImageButton) {
+      this.createRoundButton({
+        x: settingsX + settingsButtonSize / 2,
+        y: settingsY + settingsButtonSize / 2,
+        width: settingsButtonSize,
+        height: settingsButtonSize,
+        radius: settingsButtonSize / 2,
+        label: "⚙",
+        labelSize: isCompact ? 18 : 22,
+        palette,
+        onClick: openSettings,
+      });
+    }
 
     this.add
       .text(centerX, howToY + (isCompact ? 42 : 58), "SPACE / タップでスタート", {
@@ -229,6 +282,78 @@ export class TitleScene extends Phaser.Scene {
       text.setScale(1);
     });
     return { top, text };
+  }
+
+  private createTitleLogo(x: number, y: number, isCompact: boolean): boolean {
+    if (!this.textures.exists("title-logo-main")) return false;
+    const logo = this.add.image(x, y, "title-logo-main").setDepth(21).setOrigin(0.5);
+    const source = this.textures.get("title-logo-main").getSourceImage() as {
+      width?: number;
+      height?: number;
+    };
+    if (!source?.width || !source?.height) return true;
+    const targetW = isCompact ? 280 : 360;
+    const scale = targetW / source.width;
+    logo.setDisplaySize(source.width * scale, source.height * scale);
+    return true;
+  }
+
+  private createImageButton(args: {
+    x: number;
+    y: number;
+    normalKey: string;
+    hoverKey?: string;
+    pressedKey?: string;
+    disabledKey?: string;
+    width: number;
+    height: number;
+    onClick: () => void;
+    allowClickWhen?: () => boolean;
+  }): Phaser.GameObjects.Image | null {
+    if (!this.textures.exists(args.normalKey)) return null;
+    const image = this.add
+      .image(args.x, args.y, args.normalKey)
+      .setOrigin(0.5)
+      .setDisplaySize(args.width, args.height)
+      .setDepth(11)
+      .setInteractive({ useHandCursor: true });
+    const canInteract = (): boolean => (args.allowClickWhen ? args.allowClickWhen() : true);
+    image.on("pointerover", () => {
+      if (canInteract() && args.hoverKey && this.textures.exists(args.hoverKey)) {
+        image.setTexture(args.hoverKey);
+      }
+    });
+    image.on("pointerout", () => {
+      if (!canInteract() && args.disabledKey && this.textures.exists(args.disabledKey)) {
+        image.setTexture(args.disabledKey);
+        return;
+      }
+      image.setTexture(args.normalKey);
+    });
+    image.on("pointerdown", () => {
+      if (!canInteract()) {
+        if (args.disabledKey && this.textures.exists(args.disabledKey)) {
+          image.setTexture(args.disabledKey);
+        }
+        return;
+      }
+      if (args.pressedKey && this.textures.exists(args.pressedKey)) {
+        image.setTexture(args.pressedKey);
+      }
+      args.onClick();
+    });
+    image.on("pointerup", () => {
+      if (!canInteract() && args.disabledKey && this.textures.exists(args.disabledKey)) {
+        image.setTexture(args.disabledKey);
+        return;
+      }
+      if (args.hoverKey && this.textures.exists(args.hoverKey)) {
+        image.setTexture(args.hoverKey);
+        return;
+      }
+      image.setTexture(args.normalKey);
+    });
+    return image;
   }
 
   private drawGradientBackground(
