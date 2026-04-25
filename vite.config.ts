@@ -1,12 +1,40 @@
+import type { Plugin } from "vite";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
+
+// Phaser のシーン状態は HMR だけでは差し替わりにくいため、
+// src 配下の変更時はフルリロードで必ず最新状態にする。
+function fullReloadOnSrcChange(): Plugin {
+  return {
+    name: "full-reload-on-src-change",
+    configureServer(server) {
+      server.watcher.on("change", (filePath) => {
+        const normalized = filePath.replace(/\\/g, "/");
+        if (!normalized.includes("/src/")) return;
+        server.ws.send({ type: "full-reload", path: "*" });
+      });
+    },
+  };
+}
 
 export default defineConfig({
   // GitHub Pages (project site) の配信パスを固定する
   base: "/seven-runner/",
-  server: { port: 5173, host: true },
+  server: {
+    port: 5173,
+    host: true,
+    // Windows 環境で保存イベントが取りこぼされる場合の保険
+    watch:
+      process.platform === "win32"
+        ? {
+            usePolling: true,
+            interval: 200,
+          }
+        : undefined,
+  },
   build: { target: "esnext" },
   plugins: [
+    fullReloadOnSrcChange(),
     VitePWA({
       registerType: "autoUpdate",
       injectRegister: "auto",

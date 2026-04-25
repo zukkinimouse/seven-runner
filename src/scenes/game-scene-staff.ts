@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { GAME_WIDTH, GROUND_Y } from "../game/game-config";
+import { MID_TILE_SCALE } from "./game-scene-background";
 
 type StaffMode = "idle" | "wave-loop" | "check-once" | "cheer-once";
 
@@ -19,27 +20,31 @@ export type StaffSystemState = {
   actors: StaffActor[];
   nextGlobalSpeechAt: number;
   lastTriggeredMotion?: Exclude<StaffMode, "idle">;
+  prevScrollX: number | null;
+  scrollCompensationX: number;
 };
 
 const WAVE_KEYS = ["staff-wave-1", "staff-wave-2", "staff-wave-3", "staff-wave-2"] as const;
-// 背景アンカー方式: bg-mid のタイル座標から店員位置を算出する
-const BG_MID_TILE_SCALE_X = 0.9;
-const DOOR_TEXTURE_X = 1090;
-// 店舗ごとの微調整（px）
+// 中景テクスチャ上の基準 X（1 周分のパターンに対するアンカー。実際のドアオブジェクトとは無関係）
+const STAFF_PATTERN_ANCHOR_TEX_X = 1090;
+// スロットごとの横オフセット（店舗間バリエーション）
 // 要望: 0, 100, 160, 225, 295... のように
 // 基本+60に対して +5, +10, +15... と段階的に増やす
-const STAFF_TWEAK_FIRST = 0;
-const STAFF_TWEAK_SECOND = 100;
-const STAFF_TWEAK_STEP_BASE = 60;
-const STAFF_TWEAK_STEP_GROW = 5;
+const STAFF_TWEAK_FIRST = -1090;
+const STAFF_TWEAK_SECOND = -830;
+const STAFF_TWEAK_STEP_BASE = 1500;
+const STAFF_TWEAK_STEP_GROW = 30;
 const STAFF_TWEAK_STEP_MAX_SPEED = 70;
-// ドア左側に寄せるためのオフセット
+// アンカーに対する表示用の微調整（px）
 const STAFF_X_OFFSET = -14;
 const STAFF_Y = GROUND_Y - 2;
 const STAFF_DISPLAY_W = 61;
 const STAFF_DISPLAY_H = 145;
 const STAFF_DEPTH = -5;
+// ワールド座標。中景は scrollFactor(0) で tile が 0.46× 速、カメラはプレイヤーに追従するため、アンカーに scrollX を足して画面上の位置をタイルと同期させる
 const STAFF_SCROLL_FACTOR = 1;
+// カメラ追従由来の残留ドリフトを、scrollX のフレーム差分で打ち消す
+const STAFF_SCROLL_DELTA_COMPENSATION = 0.05;
 // 余白差による見た目ズレを吸収する表示補正（チアを基準に微調整）
 // 縦横を個別調整できるよう X/Y を分離する
 const STAFF_IDLE_SCALE_X = 1.0;
@@ -69,6 +74,8 @@ export function createStaffSystemState(): StaffSystemState {
     actors: [],
     nextGlobalSpeechAt: 0,
     lastTriggeredMotion: undefined,
+    prevScrollX: null,
+    scrollCompensationX: 0,
   };
 }
 
@@ -81,56 +88,86 @@ export function updateStaffSystem(
   now: number,
   isAtMaxSpeed: boolean,
 ): void {
-  const metrics = calcDoorMetrics(scene, bgMid);
+  const metrics = calcMidStaffMetrics(scene, bgMid);
   if (!metrics) return;
-  ensureVisibleDoorActors(scene, state, metrics, scrollX, isAtMaxSpeed);
+  const scrollDelta = state.prevScrollX === null ? 0 : scrollX - state.prevScrollX;
+  state.prevScrollX = scrollX;
+  state.scrollCompensationX += scrollDelta * STAFF_SCROLL_DELTA_COMPENSATION;
+
+  ensureVisibleStaffActors(scene, state, metrics, scrollX, isAtMaxSpeed);
 
   const kept: StaffActor[] = [];
   for (const actor of state.actors) {
     if (!actor.sprite.active) continue;
-    const worldX = Math.round(
-      worldDoorX(metrics, actor.slot) +
-        STAFF_X_OFFSET +
-        slotTweakX(actor.slot, isAtMaxSpeed),
+    const anchorWorldX = worldStaffAnchorX(
+      metrics,
+      actor.slot,
+      isAtMaxSpeed,
+      scrollX,
+      state.scrollCompensationX,
     );
-    actor.sprite.setX(worldX);
-    syncBubbleToActor(actor);
-    if (worldX < scrollX - 360) {
+    if (anchorWorldX < scrollX - 360) {
       actor.bubble?.destroy(true);
       actor.sprite.destroy();
       continue;
     }
 
-    tryTriggerWaveOnEnter(state, actor, scrollX, now);
-    tryTriggerPassMotion(state, actor, playerX, now);
+    tryTriggerWaveOnEnter(state, actor, scrollX, now, anchorWorldX);
+    tryTriggerPassMotion(state, actor, playerX, now, anchorWorldX);
     updateStaffMotion(actor, now);
-    tryTriggerWelcome(scene, state, actor, playerX, now);
+    actor.sprite.setX(anchorWorldX);
+    syncBubbleToActor(actor);
+    tryTriggerWelcome(scene, state, actor, playerX, now, anchorWorldX);
     kept.push(actor);
   }
   state.actors = kept;
 }
 
-type DoorMetrics = {
+type MidStaffMetrics = {
   patternWidth: number;
   offsetX: number;
   tilePositionX: number;
 };
 
-function calcDoorMetrics(
+/** 現在中景スプライトのテクスチャ・tilePosition と同期したアンカー指標 */
+function calcMidStaffMetrics(
   scene: Phaser.Scene,
   bgMid: Phaser.GameObjects.TileSprite,
-): DoorMetrics | null {
-  const src = scene.textures.get("bg-mid").getSourceImage() as {
+): MidStaffMetrics | null {
+  const texKey = bgMid.texture.key;
+  const src = scene.textures.get(texKey).getSourceImage() as {
     width?: number;
   };
   if (!src?.width) return null;
   const patternWidth = src.width * bgMid.tileScaleX;
-  const offsetX = DOOR_TEXTURE_X * BG_MID_TILE_SCALE_X;
-  return { patternWidth, offsetX, tilePositionX: bgMid.tilePositionX };
+  const offsetX = STAFF_PATTERN_ANCHOR_TEX_X * MID_TILE_SCALE;
+  return {
+    patternWidth,
+    offsetX,
+    tilePositionX: bgMid.tilePositionX,
+  };
 }
 
-function worldDoorX(metrics: DoorMetrics, slot: number): number {
-  return metrics.offsetX + slot * metrics.patternWidth - metrics.tilePositionX;
+/**
+ * 中景タイル（SF=0）上のパターンと画面上で一致させるためのワールド X。
+ * タイルのみ −tilePositionX だとカメラ移動分と合成したときに 0.46 と 1.0 の差で滑るため +scrollX を加える。
+ */
+function worldStaffAnchorX(
+  metrics: MidStaffMetrics,
+  slot: number,
+  isAtMaxSpeed: boolean,
+  scrollX: number,
+  scrollCompensationX: number,
+): number {
+  return Math.round(
+    metrics.offsetX +
+      slot * metrics.patternWidth -
+      metrics.tilePositionX +
+      scrollX +
+      scrollCompensationX +
+      STAFF_X_OFFSET +
+      slotTweakX(slot, isAtMaxSpeed),
+  );
 }
 
 function slotTweakX(slot: number, isAtMaxSpeed: boolean): number {
@@ -147,27 +184,31 @@ function slotTweakX(slot: number, isAtMaxSpeed: boolean): number {
   return value;
 }
 
-function ensureVisibleDoorActors(
+function ensureVisibleStaffActors(
   scene: Phaser.Scene,
   state: StaffSystemState,
-  metrics: DoorMetrics,
+  metrics: MidStaffMetrics,
   scrollX: number,
   isAtMaxSpeed: boolean,
 ): void {
   const left = scrollX - 120;
   const right = scrollX + GAME_WIDTH * 2.3;
   const minSlot =
-    Math.floor((left + metrics.tilePositionX - metrics.offsetX) / metrics.patternWidth) - 1;
+    Math.floor((left + metrics.tilePositionX - metrics.offsetX) / metrics.patternWidth) -
+    1;
   const maxSlot =
-    Math.ceil((right + metrics.tilePositionX - metrics.offsetX) / metrics.patternWidth) + 1;
+    Math.ceil((right + metrics.tilePositionX - metrics.offsetX) / metrics.patternWidth) +
+    1;
 
+  // 以前は「画面内だけ spawn」＋「3 スロットに 1 人」で初期位置が縛られ、オフセット調整が見えにくかったため撤廃。min〜max の全スロットで生成する。
   for (let slot = minSlot; slot <= maxSlot; slot += 1) {
-    const worldX = Math.round(
-      worldDoorX(metrics, slot) +
-        STAFF_X_OFFSET +
-        slotTweakX(slot, isAtMaxSpeed),
+    const worldX = worldStaffAnchorX(
+      metrics,
+      slot,
+      isAtMaxSpeed,
+      scrollX,
+      state.scrollCompensationX,
     );
-    if (worldX < left || worldX > right) continue;
     const exists = state.actors.some((actor) => actor.slot === slot && actor.sprite.active);
     if (exists) continue;
     const sprite = scene.add
@@ -277,9 +318,10 @@ function tryTriggerPassMotion(
   actor: StaffActor,
   playerX: number,
   now: number,
+  anchorWorldX: number,
 ): void {
   if (actor.hasPlayedPassMotion) return;
-  if (playerX < actor.sprite.x + 16) return;
+  if (playerX < anchorWorldX + 16) return;
   actor.hasPlayedPassMotion = true;
   // Wave は画面内に入った瞬間のみ発火させるため、通過時は check/cheer のみ抽選
   actor.mode = pickNonConsecutiveMotion(state, ["check-once", "cheer-once"]);
@@ -293,12 +335,13 @@ function tryTriggerWaveOnEnter(
   actor: StaffActor,
   scrollX: number,
   now: number,
+  anchorWorldX: number,
 ): void {
   if (actor.hasCheckedEntryWave) return;
   const rightEdge = scrollX + GAME_WIDTH;
   const leftEdge = scrollX - 40;
-  if (actor.sprite.x > rightEdge - 8) return;
-  if (actor.sprite.x < leftEdge) return;
+  if (anchorWorldX > rightEdge - 8) return;
+  if (anchorWorldX < leftEdge) return;
   actor.hasCheckedEntryWave = true;
 
   // 連続で同じモーションにならないよう、直前が wave なら今回は見送る
@@ -317,9 +360,10 @@ function tryTriggerWelcome(
   actor: StaffActor,
   playerX: number,
   now: number,
+  anchorWorldX: number,
 ): void {
   if (actor.hasWelcomed) return;
-  if (playerX < actor.sprite.x + 16) return;
+  if (playerX < anchorWorldX + 16) return;
   if (now < state.nextGlobalSpeechAt) return;
 
   actor.hasWelcomed = true;
