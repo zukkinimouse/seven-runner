@@ -105,7 +105,7 @@ export function registerCollisions(args: {
       body: Phaser.Physics.Arcade.Body;
     };
     const now = performance.now();
-    const canBreak = mode.isSliding || now <= mode.attackUntil;
+    const canBreak = now <= mode.attackUntil;
     if (!canBreak) {
       // 仕様A: 壊せない状態で接触したらダメージ判定を入れる
       const damaged = applyDamage(mode, now);
@@ -120,8 +120,8 @@ export function registerCollisions(args: {
     const y = box.y - 40;
     box.destroy();
     sfxBreak();
-    // オブジェクト破壊時のドロップは30%に抑える
-    if (Math.random() < 0.3) {
+    // オブジェクト破壊時のドロップは20%に抑える
+    if (Math.random() < 0.2) {
       spawnPickupItem(scene, items, x, y, randomItemId());
     }
   });

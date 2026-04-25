@@ -96,7 +96,6 @@ export class GameScene extends Phaser.Scene {
   private bgm?: Phaser.Sound.BaseSound;
   private keySpace!: Phaser.Input.Keyboard.Key;
   private keyUp!: Phaser.Input.Keyboard.Key;
-  private keyDown!: Phaser.Input.Keyboard.Key;
   private keyX!: Phaser.Input.Keyboard.Key;
   private keyShift!: Phaser.Input.Keyboard.Key;
   private ended = false;
@@ -194,7 +193,6 @@ export class GameScene extends Phaser.Scene {
     if (kb) {
       this.keySpace = kb.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
       this.keyUp = kb.addKey(Phaser.Input.Keyboard.KeyCodes.UP);
-      this.keyDown = kb.addKey(Phaser.Input.Keyboard.KeyCodes.DOWN);
       this.keyX = kb.addKey(Phaser.Input.Keyboard.KeyCodes.X);
       this.keyShift = kb.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
     }
@@ -211,7 +209,10 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.cameras.main.setBounds(0, 0, 200000, GAME_HEIGHT);
-    this.cameras.main.startFollow(this.player, true, 0.12, 0.12, -160, 40);
+    const isMobileDevice = !this.sys.game.device.os.desktop;
+    // スマホは縦方向の追従を止めて、ジャンプ時の全画面ガタつき感を抑える
+    const cameraLerpY = isMobileDevice ? 0 : 0.12;
+    this.cameras.main.startFollow(this.player, true, 0.12, cameraLerpY, -160, 40);
 
     this.createHud();
     this.createPauseButton();
@@ -236,7 +237,7 @@ export class GameScene extends Phaser.Scene {
     updatePlayerVisual(this.player, this.mode);
     applyInvincibilityVisual(this.player, this.mode, now);
 
-    handleDesktopKeyboard(this.player, this.mode, { space: this.keySpace, up: this.keyUp, down: this.keyDown, x: this.keyX, shift: this.keyShift }, now);
+    handleDesktopKeyboard(this.player, this.mode, { space: this.keySpace, up: this.keyUp, x: this.keyX, shift: this.keyShift }, now);
     this.updateAttackFlameAndHits(now);
 
     this.updateSnatcherJumpUnlock();

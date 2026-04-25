@@ -5,19 +5,14 @@ import {
   PLAYER_GROUND_OFFSET_Y,
   PLAYER_HITBOX_H,
   PLAYER_HITBOX_W,
-  PLAYER_SLIDE_GROUND_OFFSET_Y,
-  SLIDE_HITBOX_H,
 } from "../game-config";
 
 // 姿勢ごとに表示サイズを切り替え、足元基準で地面に合わせる
 // （一回り拡大前の基準: 通常 80×80、スライド 117×57）
 const PLAYER_NORMAL_DISPLAY_W = 90;
-const PLAYER_NORMAL_DISPLAY_H = 90;
-const PLAYER_SLIDE_DISPLAY_W = 127;
-const PLAYER_SLIDE_DISPLAY_H = 67;
+const PLAYER_NORMAL_DISPLAY_H = 80;
 const PLAYER_NORMAL_ORIGIN_Y = 1.18;
 const PLAYER_JUMP_ORIGIN_Y = 1.22;
-const PLAYER_SLIDE_ORIGIN_Y = 1.65;
 const PLAYER_ATTACK_ORIGIN_Y = 1.18;
 const JUMP_INPUT_COOLDOWN_MS = 120;
 const ATTACK_COOLDOWN_MS = 2000;
@@ -30,8 +25,6 @@ export type PlayerMode = {
   drinkInvUntil: number;
   jumpsUsed: number;
   lastJumpAt: number;
-  isSliding: boolean;
-  slideUntil: number;
   attackUntil: number;
   lastAttackAt: number;
   lastStealAt: number;
@@ -45,8 +38,6 @@ export function createPlayerMode(): PlayerMode {
     drinkInvUntil: 0,
     jumpsUsed: 0,
     lastJumpAt: -9999,
-    isSliding: false,
-    slideUntil: 0,
     attackUntil: 0,
     lastAttackAt: -9999,
     lastStealAt: 0,
@@ -124,12 +115,6 @@ export function updatePlayerPhysics(
   // 上昇中の瞬間接地でジャンプ回数が誤って回復しないよう、下降時のみリセットする
   if (onGround && body.velocity.y >= -10) mode.jumpsUsed = 0;
 
-  if (mode.slideUntil > 0 && now > mode.slideUntil) {
-    mode.isSliding = false;
-    mode.slideUntil = 0;
-    applyNormalHitbox(sprite);
-  }
-
   if (mode.attackUntil > 0 && now > mode.attackUntil) {
     mode.attackUntil = 0;
   }
@@ -155,19 +140,6 @@ export function tryJump(
     mode.jumpsUsed += 1;
     mode.lastJumpAt = now;
   }
-}
-
-export function trySlide(
-  sprite: Phaser.Types.Physics.Arcade.SpriteWithDynamicBody,
-  mode: PlayerMode,
-  now: number,
-): void {
-  const body = sprite.body;
-  const onGround = body.onFloor();
-  if (!onGround) return;
-  mode.isSliding = true;
-  mode.slideUntil = now + 450;
-  applySlideHitbox(sprite);
 }
 
 // テクスチャ座標で指定するため、表示サイズとスケールを考慮して body を合わせる
@@ -213,17 +185,33 @@ export function applyNormalHitbox(
   );
 }
 
-export function applySlideHitbox(
+/** 攻撃ポーズ用。原点だけ変えると body オフセットと表示がズレてカクつくため applyScaledHitbox で揃える */
+function applyAttackDisplayHitbox(
   sprite: Phaser.Types.Physics.Arcade.SpriteWithDynamicBody,
 ): void {
   applyScaledHitbox(
     sprite,
-    PLAYER_SLIDE_DISPLAY_W,
-    PLAYER_SLIDE_DISPLAY_H,
-    PLAYER_HITBOX_W,
-    SLIDE_HITBOX_H,
-    PLAYER_SLIDE_GROUND_OFFSET_Y,
-    PLAYER_SLIDE_ORIGIN_Y,
+    PLAYER_NORMAL_DISPLAY_W,
+    PLAYER_NORMAL_DISPLAY_H,
+    PLAYER_HITBOX_W * 1.2,
+    PLAYER_HITBOX_H * 0.9,
+    PLAYER_GROUND_OFFSET_Y,
+    PLAYER_ATTACK_ORIGIN_Y,
+  );
+}
+
+/** ジャンプ中。走りと原点が異なるので毎フレーム body オフセットを同期する */
+function applyAirborneHitbox(
+  sprite: Phaser.Types.Physics.Arcade.SpriteWithDynamicBody,
+): void {
+  applyScaledHitbox(
+    sprite,
+    PLAYER_NORMAL_DISPLAY_W,
+    PLAYER_NORMAL_DISPLAY_H,
+    PLAYER_HITBOX_W * 1.2,
+    PLAYER_HITBOX_H * 1.5,
+    PLAYER_GROUND_OFFSET_Y,
+    PLAYER_JUMP_ORIGIN_Y,
   );
 }
 
@@ -231,37 +219,28 @@ export function updatePlayerVisual(
   sprite: Phaser.Types.Physics.Arcade.SpriteWithDynamicBody,
   mode: PlayerMode,
 ): void {
-  const body = sprite.body;
-  const onGround = body.blocked.down || body.touching.down;
+  const body = sprite.body as Phaser.Physics.Arcade.Body;
+  const onGround = body.onFloor();
   const isAttacking = mode.attackUntil > performance.now();
 
   if (isAttacking) {
-    // 攻撃差分は通常立ち姿勢に近いため、通常原点を使って足元を安定させる
-    sprite.setOrigin(0.5, PLAYER_ATTACK_ORIGIN_Y);
+    applyAttackDisplayHitbox(sprite);
     if (sprite.anims.currentAnim?.key !== "player-attack" || !sprite.anims.isPlaying) {
       sprite.play("player-attack", true);
     }
     return;
   }
 
-  if (mode.isSliding) {
-    sprite.anims.stop();
-    // スライド画像は余白が大きいため、個別の原点で接地見た目を合わせる
-    sprite.setOrigin(0.5, PLAYER_SLIDE_ORIGIN_Y);
-    sprite.setTexture("player-slide");
-    return;
-  }
-
   if (!onGround) {
     sprite.anims.stop();
-    // ジャンプ画像は縦長なので、通常より少し高めに表示原点を調整する
-    sprite.setOrigin(0.5, PLAYER_JUMP_ORIGIN_Y);
-    sprite.setTexture(body.velocity.y < -40 ? "player-jump-1" : "player-jump-2");
+    // 上昇 / 下降でテクスチャ切替（閾値付きだと速度付近で毎フレーム切り替わり得るため vy 符号で分ける）
+    sprite.setTexture(body.velocity.y < 0 ? "player-jump-1" : "player-jump-2");
+    applyAirborneHitbox(sprite);
     return;
   }
 
-  // 通常走行は基準原点へ戻し、足元の位置を安定させる
-  sprite.setOrigin(0.5, PLAYER_NORMAL_ORIGIN_Y);
+  // 着地直後も含め、走り姿勢では表示と body を常に通常用に揃える
+  applyNormalHitbox(sprite);
 
   if (sprite.anims.currentAnim?.key !== "player-run" || !sprite.anims.isPlaying) {
     sprite.play("player-run", true);
