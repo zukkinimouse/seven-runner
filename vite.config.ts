@@ -18,8 +18,9 @@ function fullReloadOnSrcChange(): Plugin {
 }
 
 export default defineConfig({
-  // GitHub Pages (project site) の配信パスを固定する
-  base: "/seven-runner/",
+  // Vercel は "/"、GitHub Pages は "/seven-runner/" を使う
+  // （VERCEL 環境変数は Vercel ビルド時に自動で付与される）
+  base: process.env.VERCEL ? "/" : "/seven-runner/",
   server: {
     port: 5173,
     host: true,
