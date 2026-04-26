@@ -3,3 +3,6 @@ dist
 .DS_Store
 *.log
 seven-runner/
+.env
+.env.local
+.env.*.local

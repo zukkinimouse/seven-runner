@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import type { RunResultPayload } from "../game/types";
+import { getRankingSnapshot, loadSave } from "../game/persistence/storage";
 import {
   sfxResultCoinTick,
   sfxResultRankShine,
@@ -205,6 +206,24 @@ export class ResultScene extends Phaser.Scene {
       amountColor: "#b91c1c",
       playBigSe: true,
     });
+    addReceiptDivider();
+    const rankingSnapshot = getRankingSnapshot(loadSave());
+    addReceiptRow(
+      "あなたの歴代最高",
+      `¥${rankingSnapshot.personalAllTimeBestYen.toLocaleString("ja-JP")}`,
+      {
+        emphasizeAmount: true,
+        amountColor: "#7c3aed",
+      },
+    );
+    addReceiptRow(
+      `全ユーザー歴代最高（${rankingSnapshot.globalAllTimeTopNickname}）`,
+      `¥${rankingSnapshot.globalAllTimeTopYen.toLocaleString("ja-JP")}`,
+      {
+        emphasizeAmount: true,
+        amountColor: "#0f766e",
+      },
+    );
     const scrollMaxOffset = Math.max(0, rowY + 8 - scrollHeight);
     let scrollOffset = 0;
     const scrollTrack = this.add

@@ -2,6 +2,7 @@ import type { CouponRank } from "../types";
 
 export const SAVE_KEY = "sevenRunner_save";
 export const SAVE_VERSION = 1 as const;
+export const DEFAULT_STORE_ID = "store-default";
 
 export type SaveDataV1 = {
   version: typeof SAVE_VERSION;
@@ -13,6 +14,28 @@ export type SaveDataV1 = {
   bgmVolume: number;
   seVolume: number;
   muted: boolean;
+  guestId: string;
+  nickname: string;
+  storeId: string;
+  weeklyWeekKey: string;
+  weeklyStoreRanking: WeeklyStoreRankingEntry[];
+  globalAllTimeTop: GlobalAllTimeTopRecord;
+};
+
+export type WeeklyStoreRankingEntry = {
+  storeId: string;
+  weekKey: string;
+  guestId: string;
+  nickname: string;
+  bestScoreYen: number;
+  bestRunAt: string;
+};
+
+export type GlobalAllTimeTopRecord = {
+  guestId: string;
+  nickname: string;
+  scoreYen: number;
+  achievedAt: string;
 };
 
 export const DEFAULT_SAVE: SaveDataV1 = {
@@ -25,4 +48,15 @@ export const DEFAULT_SAVE: SaveDataV1 = {
   bgmVolume: 0.35,
   seVolume: 1,
   muted: false,
+  guestId: "",
+  nickname: "",
+  storeId: DEFAULT_STORE_ID,
+  weeklyWeekKey: "",
+  weeklyStoreRanking: [],
+  globalAllTimeTop: {
+    guestId: "",
+    nickname: "",
+    scoreYen: 0,
+    achievedAt: "",
+  },
 };
