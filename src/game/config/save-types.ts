@@ -16,6 +16,7 @@ export type SaveDataV1 = {
   muted: boolean;
   guestId: string;
   nickname: string;
+  nicknamePrompted: boolean;
   storeId: string;
   weeklyWeekKey: string;
   weeklyStoreRanking: WeeklyStoreRankingEntry[];
@@ -50,6 +51,7 @@ export const DEFAULT_SAVE: SaveDataV1 = {
   muted: false,
   guestId: "",
   nickname: "",
+  nicknamePrompted: false,
   storeId: DEFAULT_STORE_ID,
   weeklyWeekKey: "",
   weeklyStoreRanking: [],

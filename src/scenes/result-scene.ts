@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import type { RunResultPayload } from "../game/types";
-import { getRankingSnapshot, loadSave } from "../game/persistence/storage";
+import { getRankingSnapshot, loadSave, writeSave } from "../game/persistence/storage";
 import {
   sfxResultCoinTick,
   sfxResultRankShine,
@@ -17,6 +17,7 @@ type RankVisualTheme = {
 
 export class ResultScene extends Phaser.Scene {
   private payload?: RunResultPayload;
+  private syncStatus: "success" | "failed" | "pending" | "disabled" = "disabled";
   private canNavigate = false;
 
   private setObjectsVisible(
@@ -32,8 +33,12 @@ export class ResultScene extends Phaser.Scene {
     super("ResultScene");
   }
 
-  init(data: { payload?: RunResultPayload }): void {
+  init(data: {
+    payload?: RunResultPayload;
+    syncStatus?: "success" | "failed" | "pending" | "disabled";
+  }): void {
     this.payload = data.payload;
+    if (data.syncStatus) this.syncStatus = data.syncStatus;
   }
 
   create(): void {
@@ -43,6 +48,7 @@ export class ResultScene extends Phaser.Scene {
       this.scene.start("TitleScene");
       return;
     }
+    this.promptNicknameIfNeeded();
 
     const rankTheme = this.getRankVisualTheme(payload.rank);
     const viewW = this.scale.width;
@@ -67,6 +73,7 @@ export class ResultScene extends Phaser.Scene {
     this.add
       .rectangle(frameX, frameY, frameW, frameH, 0xfff8e1)
       .setStrokeStyle(3, 0x333333);
+    this.showRankingSyncToast(frameX, frameTop + 10);
     this.add
       .rectangle(rightPanelX, rightPanelY, rightPanelW, rightPanelH, rankTheme.panel, 0.34)
       .setStrokeStyle(3, rankTheme.shadow, 0.5);
@@ -466,6 +473,68 @@ export class ResultScene extends Phaser.Scene {
     };
     revealNextStep(0);
 
+  }
+
+  private promptNicknameIfNeeded(): void {
+    const save = loadSave();
+    if (save.nicknamePrompted) return;
+    const raw = window.prompt(
+      "ランキング表示名を入力してください（1〜20文字）\n未入力のままOKでスキップできます。",
+      save.nickname,
+    );
+    let nextNickname = save.nickname;
+    if (typeof raw === "string") {
+      const trimmed = raw.trim().slice(0, 20);
+      if (trimmed.length > 0) nextNickname = trimmed;
+    }
+    writeSave({
+      ...save,
+      nickname: nextNickname,
+      nicknamePrompted: true,
+    });
+  }
+
+  private showRankingSyncToast(centerX: number, y: number): void {
+    let text = "";
+    let fillColor = 0x0f172a;
+    if (this.syncStatus === "success") {
+      text = "ランキング送信成功";
+      fillColor = 0x166534;
+    } else if (this.syncStatus === "failed") {
+      text = "ランキング送信失敗（通信を確認）";
+      fillColor = 0x7f1d1d;
+    } else if (this.syncStatus === "pending") {
+      text = "ランキング送信中（後で反映されます）";
+      fillColor = 0x92400e;
+    } else {
+      text = "ランキング送信は未設定です";
+      fillColor = 0x334155;
+    }
+    const bg = this.add
+      .rectangle(centerX, y, 290, 28, fillColor, 0.9)
+      .setStrokeStyle(2, 0xe2e8f0, 0.7)
+      .setDepth(220);
+    bg.setRounded?.(12);
+    const label = this.add
+      .text(centerX, y, text, {
+        fontSize: "13px",
+        color: "#f8fafc",
+        fontStyle: "bold",
+        stroke: "#0f172a",
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5)
+      .setDepth(221);
+    this.tweens.add({
+      targets: [bg, label],
+      alpha: 0,
+      delay: 2200,
+      duration: 280,
+      onComplete: () => {
+        bg.destroy();
+        label.destroy();
+      },
+    });
   }
 
   private getRankVisualTheme(rank: string): RankVisualTheme {

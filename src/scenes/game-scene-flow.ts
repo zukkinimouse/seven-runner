@@ -10,7 +10,10 @@ import type { ChunkTemplate } from "../game/types";
 import { buildResultPayload } from "./game-behavior";
 import type { RunState } from "./game-behavior";
 import { applyRunToSave, loadSave, writeSave } from "../game/persistence/storage";
-import { syncRankingToSupabase } from "../game/ranking/online-ranking";
+import {
+  isSupabaseRankingEnabled,
+  syncRankingToSupabase,
+} from "../game/ranking/online-ranking";
 
 const SAFE_START_CHUNK_END_X = CHUNK_WIDTH;
 
@@ -61,17 +64,39 @@ export function transitionToResult(
   const prev = loadSave();
   const next = applyRunToSave(prev, payload, run.collectedItemIds);
   writeSave(next);
+  const startResultScene = (syncStatus: "success" | "failed" | "pending" | "disabled"): void => {
+    scene.scene.start("ResultScene", { payload, syncStatus });
+  };
+  if (!isSupabaseRankingEnabled()) {
+    startResultScene("disabled");
+    return;
+  }
+  let settled = false;
+  const timeout = scene.time.delayedCall(1200, () => {
+    if (settled) return;
+    settled = true;
+    startResultScene("pending");
+  });
   void syncRankingToSupabase(next, payload.totalYen)
     .then((remoteTop) => {
-      if (!remoteTop) return;
-      const latest = loadSave();
-      writeSave({
-        ...latest,
-        globalAllTimeTop: remoteTop,
-      });
+      if (!settled) {
+        settled = true;
+        timeout.remove(false);
+      }
+      if (remoteTop) {
+        const latest = loadSave();
+        writeSave({
+          ...latest,
+          globalAllTimeTop: remoteTop,
+        });
+      }
+      startResultScene("success");
     })
     .catch(() => {
-      // オフライン時や設定不足時はローカル保存のみで継続する
+      if (!settled) {
+        settled = true;
+        timeout.remove(false);
+      }
+      startResultScene("failed");
     });
-  scene.scene.start("ResultScene", { payload });
 }

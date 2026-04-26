@@ -5,6 +5,7 @@ import { BootScene } from "./scenes/boot-scene";
 import { TitleScene } from "./scenes/title-scene";
 import { GameScene } from "./scenes/game-scene";
 import { ResultScene } from "./scenes/result-scene";
+import { RankingScene } from "./scenes/ranking-scene";
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -23,7 +24,7 @@ const game = new Phaser.Game({
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  scene: [BootScene, TitleScene, GameScene, ResultScene],
+  scene: [BootScene, TitleScene, GameScene, ResultScene, RankingScene],
 });
 
 // モバイルでアドレスバー表示/非表示や向き変更時に親サイズとキャンバス位置を再計算する

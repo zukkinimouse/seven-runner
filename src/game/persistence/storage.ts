@@ -123,6 +123,7 @@ export function loadSave(): SaveDataV1 {
       muted: obj.muted === true,
       guestId,
       nickname,
+      nicknamePrompted: obj.nicknamePrompted === true,
       storeId,
       weeklyWeekKey: currentWeekKey,
       weeklyStoreRanking: activeWeeklyRanking,

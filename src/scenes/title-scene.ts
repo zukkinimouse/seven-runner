@@ -46,6 +46,7 @@ export class TitleScene extends Phaser.Scene {
     const howToY = isCompact ? 250 : 290;
     const settingsButtonSize = isCompact ? 44 : 48;
     const settingsX = width - 20 - settingsButtonSize;
+    const rankingX = settingsX - settingsButtonSize - 10;
     const settingsY = isCompact ? 52 : 40;
     const scoreFontSize = isCompact ? 13 : 16;
     const noticeFontSize = isCompact ? 13 : 16;
@@ -183,6 +184,22 @@ export class TitleScene extends Phaser.Scene {
         lines: ["各種今後追加予定"],
       });
     };
+    const openRanking = (): void => {
+      if (!this.canStart) return;
+      if (this.isInfoModalOpen) return;
+      this.scene.start("RankingScene");
+    };
+    this.createRoundButton({
+      x: rankingX + settingsButtonSize / 2,
+      y: settingsY + settingsButtonSize / 2,
+      width: settingsButtonSize,
+      height: settingsButtonSize,
+      radius: settingsButtonSize / 2,
+      label: "🏆",
+      labelSize: isCompact ? 17 : 20,
+      palette,
+      onClick: openRanking,
+    });
     const settingsImageButton = this.createImageButton({
       x: settingsX + settingsButtonSize / 2,
       y: settingsY + settingsButtonSize / 2,
