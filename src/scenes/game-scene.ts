@@ -72,6 +72,8 @@ export class GameScene extends Phaser.Scene {
   ] as const;
   private static readonly ADVANCED_MODE_YEN_THRESHOLD = 15000;
   private static readonly ADVANCED_MODE_ELAPSED_BONUS_SEC = 40;
+  private static readonly EXPERT_MODE_YEN_THRESHOLD = 20000;
+  private static readonly EXPERT_MODE_ELAPSED_BONUS_SEC = 20;
   private static readonly SNATCHER_HITBOX_SCALE_X = 0.8;
   private static readonly SNATCHER_HITBOX_SCALE_Y = 0.84;
   private static readonly SPECIAL_FLAME_COUNT = 7;
@@ -80,8 +82,9 @@ export class GameScene extends Phaser.Scene {
   private static readonly SPECIAL_FLAME_HITBOX_W = 122;
   private static readonly SPECIAL_FLAME_HITBOX_H = 26;
   private static readonly SPECIAL_FLAME_DESPAWN_MARGIN = 120;
-  private static readonly SPECIAL_LOGO_SPAWN_MIN_Y = 250;
-  private static readonly SPECIAL_LOGO_SPAWN_MAX_Y = 315;
+  private static readonly DESTRUCTIBLE_DROP_CHANCE = 0.2;
+  private static readonly SPECIAL_LOGO_SPAWN_MIN_Y = 260;
+  private static readonly SPECIAL_LOGO_SPAWN_MAX_Y = 310;
   private static readonly ATTACK_FLAME_TEXTURE_KEYS = [
     "player-attack-flame-1",
     "player-attack-flame-2",
@@ -372,7 +375,12 @@ export class GameScene extends Phaser.Scene {
   private getAdvancedModeElapsedBonusSec(): number {
     if (this.run.cartYen < GameScene.ADVANCED_MODE_YEN_THRESHOLD) return 0;
     // 1万5000円超え後は難易度計算用の経過時間を底上げして上級モードへ移行する
-    return GameScene.ADVANCED_MODE_ELAPSED_BONUS_SEC;
+    let elapsedBonusSec = GameScene.ADVANCED_MODE_ELAPSED_BONUS_SEC;
+    if (this.run.cartYen >= GameScene.EXPERT_MODE_YEN_THRESHOLD) {
+      // 2万円超えでさらに速度を上げ、終盤の緊張感を強める
+      elapsedBonusSec += GameScene.EXPERT_MODE_ELAPSED_BONUS_SEC;
+    }
+    return elapsedBonusSec;
   }
 
   private updateItemCollectorPosition(): void {
@@ -433,7 +441,7 @@ export class GameScene extends Phaser.Scene {
       this.player.x,
       this.cameras.main.scrollX,
       now,
-      scrollSpeed >= 330,
+      scrollSpeed,
     );
   }
 
@@ -770,7 +778,9 @@ export class GameScene extends Phaser.Scene {
       const dropY = dst.y - 40;
       this.spawnAttackHitEffect(dst.x, dst.y, "hazard");
       dst.destroy();
-      spawnPickupItem(this, this.items, dropX, dropY, randomItemId());
+      if (Math.random() < GameScene.DESTRUCTIBLE_DROP_CHANCE) {
+        spawnPickupItem(this, this.items, dropX, dropY, randomItemId());
+      }
       brokeDestructible = true;
     }
 
@@ -1052,7 +1062,9 @@ export class GameScene extends Phaser.Scene {
       this.spawnAttackHitEffect(dst.x, dst.y, "hazard");
       dst.destroy();
       sfxBreak();
-      spawnPickupItem(this, this.items, dropX, dropY, randomItemId());
+      if (Math.random() < GameScene.DESTRUCTIBLE_DROP_CHANCE) {
+        spawnPickupItem(this, this.items, dropX, dropY, randomItemId());
+      }
     }
   }
 

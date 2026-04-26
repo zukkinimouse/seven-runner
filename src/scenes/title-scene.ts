@@ -146,6 +146,7 @@ export class TitleScene extends Phaser.Scene {
         lines: [
           "・ジャンプ：SPACE / ↑ / JUMPボタン / 左画面半分タップ",
           "・攻撃：X / ATTACKボタン（クールタイムあり）",
+          "・スペシャルロゴ取得でスキルを保持（C / SKILLボタンで発動）",
           "・ひったくりは無敵中なら被害なし",
         ],
       });
@@ -446,8 +447,10 @@ export class TitleScene extends Phaser.Scene {
     this.isInfoModalOpen = true;
     const width = this.scale.width;
     const height = this.scale.height;
-    const modalW = Math.min(width * 0.72, 460);
-    const modalH = Math.min(height * 0.78, 290);
+    // 「遊び方」は説明量が多いため、通常モーダルより横幅と高さを少し広げる
+    const isHowToModal = payload.title === "遊び方";
+    const modalW = Math.min(width * (isHowToModal ? 0.78 : 0.72), isHowToModal ? 500 : 460);
+    const modalH = Math.min(height * (isHowToModal ? 0.84 : 0.78), isHowToModal ? 330 : 290);
     const centerX = width / 2;
     const centerY = height / 2;
 
@@ -493,6 +496,8 @@ export class TitleScene extends Phaser.Scene {
           body: [
             "💰 通常アイテム：獲得金額が加算",
             "🌈 栄養ドリンク：一定時間無敵",
+            "✨ スペシャルロゴ：スキルを保持",
+            "🎯 C / SKILLボタンで発動",
             "🟣 期限切れアイテム：半額分を減額",
           ].join("\n"),
         },
@@ -506,12 +511,15 @@ export class TitleScene extends Phaser.Scene {
         },
         {
           heading: "4/4 ランクと上達",
-          body: ["🔥 15,000円を超えると上級モードへ移行"].join("\n"),
+          body: [
+            "🔥 15,000円を超えると上級モードへ移行",
+            "⚡ 20,000円を超えるとさらに加速",
+          ].join("\n"),
         },
       ] as const;
       let pageIndex = 0;
       const bodyCard = this.add
-        .rectangle(centerX, centerY - 8, modalW - 76, modalH - 156, 0x1e293b, 0.82)
+        .rectangle(centerX, centerY - 6, modalW - 68, modalH - 150, 0x1e293b, 0.82)
         .setDepth(201)
         .setStrokeStyle(2, 0x93c5fd, 0.65);
       bodyCard.setRounded?.(14);
@@ -531,7 +539,7 @@ export class TitleScene extends Phaser.Scene {
           color: "#f8fafc",
           align: "left",
           lineSpacing: 10,
-          wordWrap: { width: modalW - 128, useAdvancedWrap: true },
+          wordWrap: { width: modalW - 116, useAdvancedWrap: true },
           stroke: "#111827",
           strokeThickness: 4,
           fontStyle: "bold",
@@ -546,14 +554,14 @@ export class TitleScene extends Phaser.Scene {
           range: "0円〜4,999円",
           color: "#cd7f32",
           x: centerX - 96,
-          y: centerY - 30,
+          y: centerY - 42,
         },
         {
           label: "Silver",
           range: "5,000円〜8,999円",
           color: "#c0c0c0",
           x: centerX + 96,
-          y: centerY - 30,
+          y: centerY - 42,
         },
         {
           label: "Gold",
@@ -573,7 +581,7 @@ export class TitleScene extends Phaser.Scene {
       const rankCardObjects: (Phaser.GameObjects.Rectangle | Phaser.GameObjects.Text)[] = [];
       for (const card of rankCards) {
         const bg = this.add
-          .rectangle(card.x, card.y, 170, 34, 0x0f172a, 0.88)
+          .rectangle(card.x, card.y, 176, 38, 0x0f172a, 0.88)
           .setDepth(202)
           .setStrokeStyle(2, 0x94a3b8, 0.72)
           .setVisible(false);
@@ -603,15 +611,18 @@ export class TitleScene extends Phaser.Scene {
         rankCardObjects.push(bg, labelText, rangeText);
       }
       const rankNoteBg = this.add
-        .rectangle(centerX, centerY + 48, modalW - 130, 30, 0x0f172a, 0.9)
+        // 2行テキストでも窮屈にならないよう、ランク注記枠を広めに取る
+        .rectangle(centerX, centerY + 62, modalW - 96, 52, 0x0f172a, 0.9)
         .setDepth(202)
         .setStrokeStyle(2, 0xfbbf24, 0.82)
         .setVisible(false);
       rankNoteBg.setRounded?.(10);
       const rankNoteText = this.add
-        .text(centerX, centerY + 48, pages[3].body, {
+        .text(centerX, centerY + 62, pages[3].body, {
           fontSize: "14px",
           color: "#f8fafc",
+          align: "center",
+          lineSpacing: 6,
           fontStyle: "bold",
           stroke: "#111827",
           strokeThickness: 4,

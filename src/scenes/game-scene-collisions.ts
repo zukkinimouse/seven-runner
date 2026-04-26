@@ -14,6 +14,8 @@ import {
 import type { RunState } from "./game-behavior";
 import { spawnPickupItem } from "../game/world/spawn-chunk";
 
+const DESTRUCTIBLE_DROP_CHANCE = 0.2;
+
 /** 衝突・取得の登録（日本語コメントは呼び出し元の意図補助） */
 export function registerCollisions(args: {
   scene: Phaser.Scene;
@@ -138,8 +140,8 @@ export function registerCollisions(args: {
     const y = box.y - 40;
     box.destroy();
     sfxBreak();
-    // オブジェクト破壊時のドロップは20%に抑える
-    if (Math.random() < 0.2) {
+    // オブジェクト破壊時のドロップを絞り、体感の出過ぎを防ぐ
+    if (Math.random() < DESTRUCTIBLE_DROP_CHANCE) {
       spawnPickupItem(scene, items, x, y, randomItemId());
     }
   });

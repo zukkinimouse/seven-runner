@@ -22,6 +22,9 @@ export type StaffSystemState = {
   lastTriggeredMotion?: Exclude<StaffMode, "idle">;
   prevScrollX: number | null;
   scrollCompensationX: number;
+  isMaxSpeedLayout: boolean;
+  lastOutOfRangeAtBySlot: Map<number, number>;
+  lastDespawnAtBySlot: Map<number, number>;
 };
 
 const WAVE_KEYS = ["staff-wave-1", "staff-wave-2", "staff-wave-3", "staff-wave-2"] as const;
@@ -34,7 +37,11 @@ const STAFF_TWEAK_FIRST = -1090;
 const STAFF_TWEAK_SECOND = -830;
 const STAFF_TWEAK_STEP_BASE = 1500;
 const STAFF_TWEAK_STEP_GROW = 30;
-const STAFF_TWEAK_STEP_MAX_SPEED = 70;
+const STAFF_TWEAK_STEP_MAX_SPEED = 80;
+const STAFF_MAX_SPEED_LAYOUT_ON = 332;
+const STAFF_MAX_SPEED_LAYOUT_OFF = 326;
+const STAFF_DESPAWN_GRACE_MS = 220;
+const STAFF_RESPAWN_COOLDOWN_MS = 500;
 // アンカーに対する表示用の微調整（px）
 const STAFF_X_OFFSET = -14;
 const STAFF_Y = GROUND_Y - 2;
@@ -76,6 +83,9 @@ export function createStaffSystemState(): StaffSystemState {
     lastTriggeredMotion: undefined,
     prevScrollX: null,
     scrollCompensationX: 0,
+    isMaxSpeedLayout: false,
+    lastOutOfRangeAtBySlot: new Map<number, number>(),
+    lastDespawnAtBySlot: new Map<number, number>(),
   };
 }
 
@@ -86,15 +96,23 @@ export function updateStaffSystem(
   playerX: number,
   scrollX: number,
   now: number,
-  isAtMaxSpeed: boolean,
+  scrollSpeed: number,
 ): void {
   const metrics = calcMidStaffMetrics(scene, bgMid);
   if (!metrics) return;
+  if (state.isMaxSpeedLayout) {
+    if (scrollSpeed <= STAFF_MAX_SPEED_LAYOUT_OFF) {
+      state.isMaxSpeedLayout = false;
+    }
+  } else if (scrollSpeed >= STAFF_MAX_SPEED_LAYOUT_ON) {
+    state.isMaxSpeedLayout = true;
+  }
+  const isAtMaxSpeed = state.isMaxSpeedLayout;
   const scrollDelta = state.prevScrollX === null ? 0 : scrollX - state.prevScrollX;
   state.prevScrollX = scrollX;
   state.scrollCompensationX += scrollDelta * STAFF_SCROLL_DELTA_COMPENSATION;
 
-  ensureVisibleStaffActors(scene, state, metrics, scrollX, isAtMaxSpeed);
+  ensureVisibleStaffActors(scene, state, metrics, scrollX, now, isAtMaxSpeed);
 
   const kept: StaffActor[] = [];
   for (const actor of state.actors) {
@@ -107,10 +125,19 @@ export function updateStaffSystem(
       state.scrollCompensationX,
     );
     if (anchorWorldX < scrollX - 360) {
+      const outSince = state.lastOutOfRangeAtBySlot.get(actor.slot) ?? now;
+      state.lastOutOfRangeAtBySlot.set(actor.slot, outSince);
+      if (now - outSince < STAFF_DESPAWN_GRACE_MS) {
+        kept.push(actor);
+        continue;
+      }
+      state.lastOutOfRangeAtBySlot.delete(actor.slot);
+      state.lastDespawnAtBySlot.set(actor.slot, now);
       actor.bubble?.destroy(true);
       actor.sprite.destroy();
       continue;
     }
+    state.lastOutOfRangeAtBySlot.delete(actor.slot);
 
     tryTriggerWaveOnEnter(state, actor, scrollX, now, anchorWorldX);
     tryTriggerPassMotion(state, actor, playerX, now, anchorWorldX);
@@ -189,6 +216,7 @@ function ensureVisibleStaffActors(
   state: StaffSystemState,
   metrics: MidStaffMetrics,
   scrollX: number,
+  now: number,
   isAtMaxSpeed: boolean,
 ): void {
   const left = scrollX - 120;
@@ -202,6 +230,13 @@ function ensureVisibleStaffActors(
 
   // 以前は「画面内だけ spawn」＋「3 スロットに 1 人」で初期位置が縛られ、オフセット調整が見えにくかったため撤廃。min〜max の全スロットで生成する。
   for (let slot = minSlot; slot <= maxSlot; slot += 1) {
+    const lastDespawnAt = state.lastDespawnAtBySlot.get(slot);
+    if (
+      lastDespawnAt !== undefined &&
+      now - lastDespawnAt < STAFF_RESPAWN_COOLDOWN_MS
+    ) {
+      continue;
+    }
     const worldX = worldStaffAnchorX(
       metrics,
       slot,
@@ -406,7 +441,8 @@ function createSpeechBubble(
       fontStyle: "bold",
     })
     .setOrigin(0.5, 0.5);
-  const bubble = scene.add.container(x, y, [panel, tail, label]).setDepth(24).setAlpha(0);
+  // プレイヤー最前面を維持するため、吹き出しはプレイヤーより後ろに置く
+  const bubble = scene.add.container(x, y, [panel, tail, label]).setDepth(9).setAlpha(0);
   bubble.setScrollFactor(STAFF_SCROLL_FACTOR, STAFF_SCROLL_FACTOR);
 
   scene.tweens.chain({
