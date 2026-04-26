@@ -4,7 +4,7 @@ import {
   grantEnergyDrinkInvincibility,
 } from "../game/entities/player-controller";
 import type { PlayerMode } from "../game/entities/player-controller";
-import { sfxBreak, sfxHit, sfxSteal } from "../game/audio/sfx";
+import { sfxBreak, sfxEnergyPop, sfxHit, sfxSteal } from "../game/audio/sfx";
 import {
   collectItem,
   isEnergyDrinkItem,
@@ -18,6 +18,7 @@ import { spawnPickupItem } from "../game/world/spawn-chunk";
 export function registerCollisions(args: {
   scene: Phaser.Scene;
   player: Phaser.Types.Physics.Arcade.SpriteWithDynamicBody;
+  itemCollector: Phaser.GameObjects.Rectangle;
   platforms: Phaser.Physics.Arcade.StaticGroup;
   items: Phaser.Physics.Arcade.Group;
   hazards: Phaser.Physics.Arcade.Group;
@@ -25,21 +26,38 @@ export function registerCollisions(args: {
   mode: PlayerMode;
   run: RunState;
 }): void {
-  const { scene, player, platforms, items, hazards, destructibles, mode, run } =
+  const {
+    scene,
+    player,
+    itemCollector,
+    platforms,
+    items,
+    hazards,
+    destructibles,
+    mode,
+    run,
+  } =
     args;
 
   scene.physics.add.collider(player, platforms);
 
-  scene.physics.add.overlap(player, items, (_p, obj) => {
+  // アイテム取得だけは首〜口元センサーで判定し、胴体判定とは分離する
+  scene.physics.add.overlap(itemCollector, items, (_p, obj) => {
     const item = obj as Phaser.GameObjects.Image & {
       body: Phaser.Physics.Arcade.Body;
     };
     const id = item.getData("itemId") as string | undefined;
     const isSpoiled = item.getData("isSpoiled") === true;
     if (!id) return;
+    if (id === "seven_special_logo") {
+      // ロゴ取得で保持スキルをチャージする
+      scene.events.emit("pickup-seven-logo-special");
+    }
     if (isEnergyDrinkItem(id)) {
       // 栄養ドリンク取得後は2秒間の専用無敵を付与する
       grantEnergyDrinkInvincibility(mode, performance.now());
+      // SEはスポーン時ではなく取得時のみ鳴らす
+      sfxEnergyPop();
     }
     const addYen = collectItem(run, id, performance.now(), isSpoiled);
     if (addYen > 0) {

@@ -8,7 +8,7 @@ import { comboMultiplierFromCount, rankFromTotalYen } from "../game/logic/score"
 import type { PlayerMode } from "../game/entities/player-controller";
 import type { RunResultPayload } from "../game/types";
 import type { SpawnedChunkHandle } from "../game/world/spawn-chunk";
-import { sfxPickup, sfxSpoiledPickup } from "../game/audio/sfx";
+import { sfxPickup, sfxSpecialPickup, sfxSpoiledPickup } from "../game/audio/sfx";
 
 export function isEnergyDrinkItem(itemId: string): boolean {
   return itemId === "energy_drink";
@@ -81,7 +81,11 @@ export function collectItem(
   if (isSpoiled) {
     sfxSpoiledPickup();
   } else {
-    sfxPickup();
+    if (itemId === "seven_special_logo") {
+      sfxSpecialPickup();
+    } else {
+      sfxPickup();
+    }
   }
   return appliedYen;
 }
@@ -97,7 +101,9 @@ export function stealFromCart(run: RunState, now: number, mode: PlayerMode): num
 
 /** 箱ドロップ用：弁当は小だけ偏りやすいので中・大をやや多めに抽選する */
 export function randomItemId(): string {
-  const pool = ITEM_DEFINITIONS.filter((item) => item.id !== "energy_drink");
+  const pool = ITEM_DEFINITIONS.filter(
+    (item) => item.id !== "energy_drink" && item.id !== "seven_special_logo",
+  );
   const weightFor = (id: string): number => {
     if (id === "bento_small") return 1;
     if (id === "bento_medium") return 2.1;

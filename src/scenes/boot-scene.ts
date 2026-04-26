@@ -36,6 +36,40 @@ export class BootScene extends Phaser.Scene {
     this.load.image("player-attack-3", "assets/player/attack-open-mouth-3.png");
     this.load.image("player-attack-4", "assets/player/attack-open-mouth-4.png");
     this.load.image("player-attack-flame", "assets/player/attack-flame.png");
+    // 追加した攻撃エフェクト差分（webp）を読み込む
+    this.load.image("player-attack-flame-1", "assets/player-attack-flame-1.webp");
+    this.load.image("player-attack-flame-2", "assets/player-attack-flame-2.webp");
+    this.load.image("player-attack-flame-3", "assets/player-attack-flame-3.webp");
+    this.load.image("player-attack-flame-4", "assets/player-attack-flame-4.webp");
+    // 追加したアイテムロゴ差分（webp）を読み込む
+    this.load.image(
+      "item-logo-seven-special-1",
+      "assets/item-logo-seven-special-1.webp",
+    );
+    this.load.image(
+      "item-logo-seven-special-2",
+      "assets/item-logo-seven-special-2.webp",
+    );
+    this.load.image(
+      "item-logo-seven-special-3",
+      "assets/item-logo-seven-special-3.webp",
+    );
+    this.load.image(
+      "item-logo-seven-special-4",
+      "assets/item-logo-seven-special-4.webp",
+    );
+    // 追加した取得/ヒットエフェクトを読み込む
+    this.load.image("item-effect-pickup-1", "assets/item-effect-pickup-1.webp");
+    this.load.image("item-effect-pickup-2", "assets/item-effect-pickup-2.webp");
+    this.load.image("item-effect-pickup-3", "assets/item-effect-pickup-3.webp");
+    this.load.image("item-effect-pickup-4", "assets/item-effect-pickup-4.webp");
+    this.load.image("item-effect-pickup-5", "assets/item-effect-pickup-5.webp");
+    this.load.image("item-effect-pickup-6", "assets/item-effect-pickup-6.webp");
+    this.load.image("hit-effect-hazard-1", "assets/hit-effect-hazard-1.webp");
+    this.load.image(
+      "hit-effect-destructible-1",
+      "assets/hit-effect-destructible-1.webp",
+    );
     this.load.image("staff-idle", "assets/characters/staff/idle/staff-idle.png");
     this.load.image(
       "staff-check",

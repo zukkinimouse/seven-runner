@@ -2,7 +2,6 @@ import Phaser from "phaser";
 import { CHUNK_WIDTH, GROUND_Y } from "../game-config";
 import { getItemTextureKey } from "../config/item-definitions";
 import type { ChunkTemplate } from "../types";
-import { sfxEnergyPop } from "../audio/sfx";
 
 export type SpawnedChunkHandle = {
   baseX: number;
@@ -45,7 +44,7 @@ function spoiledChanceForDifficulty(difficulty: number): number {
 }
 
 function shouldSpawnSpoiledItem(itemId: string, chance: number): boolean {
-  if (itemId === "energy_drink") return false;
+  if (itemId === "energy_drink" || itemId === "seven_special_logo") return false;
   return Math.random() < chance;
 }
 
@@ -114,6 +113,11 @@ function applyItemDisplaySize(
     }
     // 細長ドリンクと弁当類のシルエット差をはっきりさせる
     item.setDisplaySize(isPickup ? 17 : 19, isPickup ? 28 : 32);
+    return;
+  }
+  if (isSpecialLogoTextureKey(texKey)) {
+    // スペシャルロゴは見逃しにくいよう横長を維持しつつ大きめに表示
+    item.setDisplaySize(isPickup ? 58 : 64, isPickup ? 38 : 42);
     return;
   }
   if (isSandwichTextureKey(texKey)) {
@@ -231,6 +235,7 @@ function itemDisplaySizeByItem(
     if (itemId === "energy_drink") return { width: 34, height: 52 };
     return { width: 19, height: 32 };
   }
+  if (isSpecialLogoTextureKey(texKey)) return { width: 64, height: 42 };
   if (isSandwichTextureKey(texKey)) return { width: 40, height: 40 };
   return { width: 27, height: 27 };
 }
@@ -245,6 +250,10 @@ function isOnigiriTextureKey(texKey: string): boolean {
 
 function isSandwichTextureKey(texKey: string): boolean {
   return texKey.startsWith("item-sandwich");
+}
+
+function isSpecialLogoTextureKey(texKey: string): boolean {
+  return texKey === "title-logo-main" || texKey.startsWith("item-logo-seven-special");
 }
 
 function canPlaceItemX(
@@ -549,7 +558,6 @@ export function spawnPickupItem(
   // 表示後の scale を基準に ±10% だけ脈動（setDisplaySize 後の倍率を壊さない）
   if (itemId === "energy_drink") {
     item.setDepth(11);
-    sfxEnergyPop();
     const sx = item.scaleX;
     const sy = item.scaleY;
     scene.tweens.add({
@@ -557,6 +565,21 @@ export function spawnPickupItem(
       scaleX: sx * 1.1,
       scaleY: sy * 1.1,
       duration: 1000,
+      ease: "Sine.InOut",
+      yoyo: true,
+      repeat: -1,
+    });
+  }
+  if (itemId === "seven_special_logo") {
+    item.setDepth(11);
+    const sx = item.scaleX;
+    const sy = item.scaleY;
+    scene.tweens.add({
+      targets: item,
+      angle: 6,
+      scaleX: sx * 1.08,
+      scaleY: sy * 1.08,
+      duration: 820,
       ease: "Sine.InOut",
       yoyo: true,
       repeat: -1,

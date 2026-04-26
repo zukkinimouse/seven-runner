@@ -12,11 +12,20 @@ import {
 const PLAYER_NORMAL_DISPLAY_W = 90;
 const PLAYER_NORMAL_DISPLAY_H = 80;
 const PLAYER_NORMAL_ORIGIN_Y = 1.18;
-const PLAYER_JUMP_ORIGIN_Y = 1.22;
+// 走り↔空中の切替で originY が変わると body.bottom と displayOrigin が同時にズレ、
+// onFloor() の1フレームフリッカで sprite.y が往復してブレる。
+// 物理（hitbox サイズ・重力）には触らず、視覚の原点だけ揃える。
+const PLAYER_JUMP_ORIGIN_Y = PLAYER_NORMAL_ORIGIN_Y;
 const PLAYER_ATTACK_ORIGIN_Y = 1.18;
 const JUMP_INPUT_COOLDOWN_MS = 120;
 const ATTACK_COOLDOWN_MS = 2000;
 const RAINBOW_CYCLE_MS = 220;
+
+// 当たり判定の下端を表示の足元より 10px 上げる。通常姿勢にだけ加えると body.bottom の世界Yが
+// 走り/空中/攻撃で揺れ、onFloor フリッカ時に上下ブレが出るため、3姿勢で同じオフセットに揃える。
+const NORMAL_HITBOX_OFFSET_UP_PX = 10;
+const HITBOX_GROUND_OFFSET_Y =
+  PLAYER_GROUND_OFFSET_Y - NORMAL_HITBOX_OFFSET_UP_PX;
 
 export type PlayerMode = {
   hp: number;
@@ -180,7 +189,7 @@ export function applyNormalHitbox(
     PLAYER_NORMAL_DISPLAY_H,
     PLAYER_HITBOX_W,
     PLAYER_HITBOX_H,
-    PLAYER_GROUND_OFFSET_Y,
+    HITBOX_GROUND_OFFSET_Y,
     PLAYER_NORMAL_ORIGIN_Y,
   );
 }
@@ -195,7 +204,7 @@ function applyAttackDisplayHitbox(
     PLAYER_NORMAL_DISPLAY_H,
     PLAYER_HITBOX_W * 1.2,
     PLAYER_HITBOX_H * 0.9,
-    PLAYER_GROUND_OFFSET_Y,
+    HITBOX_GROUND_OFFSET_Y,
     PLAYER_ATTACK_ORIGIN_Y,
   );
 }
@@ -210,7 +219,7 @@ function applyAirborneHitbox(
     PLAYER_NORMAL_DISPLAY_H,
     PLAYER_HITBOX_W * 1.2,
     PLAYER_HITBOX_H * 1.5,
-    PLAYER_GROUND_OFFSET_Y,
+    HITBOX_GROUND_OFFSET_Y,
     PLAYER_JUMP_ORIGIN_Y,
   );
 }
@@ -232,7 +241,9 @@ export function updatePlayerVisual(
   }
 
   if (!onGround) {
-    sprite.anims.stop();
+    // stop() だと地面復帰時に play() が走りアニメをフレーム1へ巻き戻して
+    // カクついて見えるため、現在フレームを保持する pause() を使う
+    if (!sprite.anims.isPaused) sprite.anims.pause();
     // 上昇 / 下降でテクスチャ切替（閾値付きだと速度付近で毎フレーム切り替わり得るため vy 符号で分ける）
     sprite.setTexture(body.velocity.y < 0 ? "player-jump-1" : "player-jump-2");
     applyAirborneHitbox(sprite);
@@ -242,6 +253,10 @@ export function updatePlayerVisual(
   // 着地直後も含め、走り姿勢では表示と body を常に通常用に揃える
   applyNormalHitbox(sprite);
 
+  // 直前まで pause だった場合は続きから再生してアニメ巻き戻りを防ぐ
+  if (sprite.anims.isPaused) {
+    sprite.anims.resume();
+  }
   if (sprite.anims.currentAnim?.key !== "player-run" || !sprite.anims.isPlaying) {
     sprite.play("player-run", true);
   }

@@ -3,10 +3,12 @@ import Phaser from "phaser";
 export type TouchHandlers = {
   onJump: () => void;
   onAttack: () => void;
+  onSkill: () => void;
 };
 
 export type TouchControlsUi = {
   setAttackCooldownRemainingMs: (remainingMs: number) => void;
+  setSkillReady: (ready: boolean) => void;
 };
 
 type TouchButtonStyle = {
@@ -87,6 +89,15 @@ export function createTouchControls(
       fillColor: 0x7c3aed,
     },
   );
+  const skillButton = createActionButton(
+    buttonX,
+    buttonYBase - (buttonSize + buttonGap) * 2,
+    {
+      label: "SKILL",
+      fontSize: isMobileLayout ? "16px" : "14px",
+      fillColor: 0x0e7490,
+    },
+  );
   // クールタイム中の秒数は円内中央に重ねて表示する
   const attackCooldownText = scene.add
     .text(attackButton.button.x, attackButton.button.y + 6, "", {
@@ -104,6 +115,7 @@ export function createTouchControls(
   jumpZone.on("pointerdown", () => handlers.onJump());
   jumpButton.button.on("pointerdown", () => handlers.onJump());
   attackButton.button.on("pointerdown", () => handlers.onAttack());
+  skillButton.button.on("pointerdown", () => handlers.onSkill());
 
   return {
     setAttackCooldownRemainingMs: (remainingMs: number) => {
@@ -113,6 +125,10 @@ export function createTouchControls(
       attackCooldownText.setVisible(isCoolingDown);
       if (!isCoolingDown) return;
       attackCooldownText.setText(`${(remainingMs / 1000).toFixed(1)}s`);
+    },
+    setSkillReady: (ready: boolean) => {
+      skillButton.button.setFillStyle(ready ? 0x0e7490 : 0x334155, ready ? 0.74 : 0.46);
+      skillButton.text.setAlpha(ready ? 1 : 0.42);
     },
   };
 }

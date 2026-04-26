@@ -6,6 +6,7 @@ export const ITEM_DEFINITIONS: readonly ItemDefinition[] = [
   { id: "onigiri_large", name: "おにぎり（大）", price: 300, rarity: "uncommon" },
   { id: "sandwich_tamago", name: "たまごサンド", price: 350, rarity: "uncommon" },
   { id: "energy_drink", name: "栄養ドリンク", price: 300, rarity: "rare" },
+  { id: "seven_special_logo", name: "セブンロゴ（SP）", price: 777, rarity: "legendary" },
   { id: "bento_small", name: "お弁当（小）", price: 500, rarity: "common" },
   { id: "bento_medium", name: "お弁当（中）", price: 600, rarity: "uncommon" },
   { id: "bento_large", name: "お弁当（大）", price: 700, rarity: "epic" },
@@ -44,6 +45,14 @@ export function getItemTextureKey(id: string): string {
     ]);
   }
   if (id === "energy_drink") return "item-drink";
+  if (id === "seven_special_logo") {
+    return pickRandomTextureKey([
+      "item-logo-seven-special-1",
+      "item-logo-seven-special-2",
+      "item-logo-seven-special-3",
+      "item-logo-seven-special-4",
+    ]);
+  }
   return "item-bento";
 }
 
@@ -58,6 +67,7 @@ export function getReceiptItemName(id: string): string {
   if (id === "onigiri_large") return "おにぎり（大）";
   if (id.includes("sandwich")) return "サンドイッチ";
   if (id === "energy_drink") return "栄養ドリンク";
+  if (id === "seven_special_logo") return "セブンロゴ（SP）";
   if (id === "bento_small") return "お弁当（小）";
   if (id === "bento_medium") return "お弁当（中）";
   if (id === "bento_large") return "お弁当（大）";

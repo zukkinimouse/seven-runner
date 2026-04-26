@@ -15,10 +15,12 @@ export function handleDesktopKeyboard(
     up?: Phaser.Input.Keyboard.Key;
     x?: Phaser.Input.Keyboard.Key;
     shift?: Phaser.Input.Keyboard.Key;
+    c?: Phaser.Input.Keyboard.Key;
   },
   now: number,
+  onSkillActivate?: () => void,
 ): void {
-  const { space, up, x, shift } = keys;
+  const { space, up, x, shift, c } = keys;
   if (space && Phaser.Input.Keyboard.JustDown(space)) {
     tryJump(player, mode, now);
     sfxJump();
@@ -33,5 +35,8 @@ export function handleDesktopKeyboard(
   if (attackPressed) {
     const attacked = tryAttack(mode, now);
     if (attacked) sfxAttack();
+  }
+  if (c && Phaser.Input.Keyboard.JustDown(c)) {
+    onSkillActivate?.();
   }
 }

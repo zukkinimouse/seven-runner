@@ -451,6 +451,15 @@ export class ResultScene extends Phaser.Scene {
 
   private getRankVisualTheme(rank: string): RankVisualTheme {
     const normalized = rank.toUpperCase();
+    if (normalized === "P" || normalized.includes("PLATINUM")) {
+      return {
+        primary: "#e9d5ff",
+        accent: "#f5f3ff",
+        shadow: 0x6d28d9,
+        panel: 0x4c1d95,
+        label: "PLATINUM RANK",
+      };
+    }
     if (normalized === "A" || normalized.includes("GOLD")) {
       return {
         primary: "#facc15",

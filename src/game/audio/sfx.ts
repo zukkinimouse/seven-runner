@@ -30,6 +30,76 @@ function beep(freq: number, durationMs: number, gain = 0.05): void {
   }, durationMs);
 }
 
+type ToneType = OscillatorType;
+
+function playTone(args: {
+  type: ToneType;
+  freq: number;
+  durationMs: number;
+  gain?: number;
+  slideToFreq?: number;
+}): void {
+  const c = getCtx();
+  if (!c) return;
+  const o = c.createOscillator();
+  const g = c.createGain();
+  o.type = args.type;
+  o.frequency.setValueAtTime(args.freq, c.currentTime);
+  if (args.slideToFreq !== undefined) {
+    o.frequency.exponentialRampToValueAtTime(
+      Math.max(1, args.slideToFreq),
+      c.currentTime + args.durationMs / 1000,
+    );
+  }
+  const baseGain = (args.gain ?? 0.04) * (isMuted ? 0 : seVolume);
+  g.gain.setValueAtTime(baseGain, c.currentTime);
+  // 炎っぽい尾を作るため、最後は自然減衰させる
+  g.gain.exponentialRampToValueAtTime(
+    Math.max(0.0001, baseGain * 0.02),
+    c.currentTime + args.durationMs / 1000,
+  );
+  o.connect(g);
+  g.connect(c.destination);
+  o.start();
+  o.stop(c.currentTime + args.durationMs / 1000);
+  o.onended = () => {
+    o.disconnect();
+    g.disconnect();
+  };
+}
+
+function playNoiseBurst(durationMs: number, gain = 0.03, highpassHz = 900): void {
+  const c = getCtx();
+  if (!c) return;
+  const buffer = c.createBuffer(1, Math.floor(c.sampleRate * (durationMs / 1000)), c.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i += 1) {
+    data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+  }
+  const src = c.createBufferSource();
+  src.buffer = buffer;
+  const hp = c.createBiquadFilter();
+  hp.type = "highpass";
+  hp.frequency.value = highpassHz;
+  const g = c.createGain();
+  const baseGain = gain * (isMuted ? 0 : seVolume);
+  g.gain.setValueAtTime(baseGain, c.currentTime);
+  g.gain.exponentialRampToValueAtTime(
+    Math.max(0.0001, baseGain * 0.03),
+    c.currentTime + durationMs / 1000,
+  );
+  src.connect(hp);
+  hp.connect(g);
+  g.connect(c.destination);
+  src.start();
+  src.stop(c.currentTime + durationMs / 1000);
+  src.onended = () => {
+    src.disconnect();
+    hp.disconnect();
+    g.disconnect();
+  };
+}
+
 export function setSeVolume(volume: number): void {
   const normalized = Math.max(0, Math.min(1, volume));
   seVolume = SE_VOLUME_MIN + (SE_VOLUME_MAX - SE_VOLUME_MIN) * normalized;
@@ -125,4 +195,101 @@ export function sfxSteal(): void {
   // ひったくり被害は硬貨音っぽい高めの2音で分かりやすくする
   beep(1320, 26, 0.03);
   window.setTimeout(() => beep(1760, 30, 0.028), 24);
+}
+
+/** スペシャル取得: 火花が散るような上昇系SE */
+export function sfxSpecialPickup(): void {
+  playTone({
+    type: "triangle",
+    freq: 880,
+    slideToFreq: 1320,
+    durationMs: 95,
+    gain: 0.042,
+  });
+  window.setTimeout(
+    () =>
+      playTone({
+        type: "sawtooth",
+        freq: 1380,
+        slideToFreq: 1680,
+        durationMs: 62,
+        gain: 0.032,
+      }),
+    34,
+  );
+  window.setTimeout(() => playNoiseBurst(64, 0.026, 2200), 18);
+}
+
+/** スペシャル発動: 低音の着火＋燃え上がり */
+export function sfxSpecialActivate(): void {
+  playTone({
+    type: "sawtooth",
+    freq: 240,
+    slideToFreq: 150,
+    durationMs: 140,
+    gain: 0.068,
+  });
+  playNoiseBurst(220, 0.04, 700);
+  window.setTimeout(
+    () =>
+      playTone({
+        type: "triangle",
+        freq: 420,
+        slideToFreq: 840,
+        durationMs: 155,
+        gain: 0.05,
+      }),
+    70,
+  );
+  window.setTimeout(
+    () =>
+      playTone({
+        type: "triangle",
+        freq: 880,
+        slideToFreq: 1220,
+        durationMs: 92,
+        gain: 0.026,
+      }),
+    140,
+  );
+}
+
+/** スペシャルのオブジェクトヒット: パシュっと乾いた炎音 */
+export function sfxSpecialHitObject(): void {
+  playNoiseBurst(96, 0.034, 1700);
+  window.setTimeout(
+    () =>
+      playTone({
+        type: "square",
+        freq: 860,
+        slideToFreq: 520,
+        durationMs: 58,
+        gain: 0.034,
+      }),
+    12,
+  );
+}
+
+/** スペシャルの敵ヒット: 重めの炎インパクト */
+export function sfxSpecialHitEnemy(): void {
+  playNoiseBurst(126, 0.042, 1200);
+  playTone({
+    type: "sawtooth",
+    freq: 300,
+    slideToFreq: 180,
+    durationMs: 100,
+    gain: 0.06,
+  });
+  window.setTimeout(
+    () =>
+      playTone({
+        type: "triangle",
+        freq: 640,
+        slideToFreq: 420,
+        durationMs: 74,
+        gain: 0.042,
+      }),
+    38,
+  );
+  window.setTimeout(() => playNoiseBurst(56, 0.022, 2400), 84);
 }

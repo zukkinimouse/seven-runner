@@ -23,6 +23,9 @@ import {
   sfxAttackHit,
   sfxBreak,
   sfxJump,
+  sfxSpecialActivate,
+  sfxSpecialHitEnemy,
+  sfxSpecialHitObject,
   sfxSnatcherDefeat,
 } from "../game/audio/sfx";
 import { loadSave } from "../game/persistence/storage";
@@ -47,9 +50,18 @@ import {
 import type { SpawnedChunkHandle } from "../game/world/spawn-chunk";
 import { spawnPickupItem } from "../game/world/spawn-chunk";
 
+type SpecialFlameShot = {
+  sprite: Phaser.GameObjects.Image;
+  hitHazards: Set<Phaser.GameObjects.Image>;
+  hitDestructibles: Set<Phaser.GameObjects.Image>;
+};
+
 export class GameScene extends Phaser.Scene {
   // キリン素材の余白ぶんを補正して、足元をレール上に合わせる
   private static readonly PLAYER_VISUAL_OFFSET_Y = 33;
+  private static readonly ITEM_COLLECTOR_W = 66;
+  private static readonly ITEM_COLLECTOR_H = 54;
+  private static readonly ITEM_COLLECTOR_OFFSET_Y = -66;
   private static readonly FLAME_DISPLAY_W = 68;
   private static readonly FLAME_DISPLAY_H = 38;
   private static readonly HUD_FONT_FAMILY = '"Arial Black", "Trebuchet MS", sans-serif';
@@ -62,8 +74,41 @@ export class GameScene extends Phaser.Scene {
   private static readonly ADVANCED_MODE_ELAPSED_BONUS_SEC = 40;
   private static readonly SNATCHER_HITBOX_SCALE_X = 0.8;
   private static readonly SNATCHER_HITBOX_SCALE_Y = 0.84;
+  private static readonly SPECIAL_FLAME_COUNT = 7;
+  private static readonly SPECIAL_FLAME_SPEED = 1080;
+  private static readonly SPECIAL_FLAME_SPACING_RATIO = 0.42;
+  private static readonly SPECIAL_FLAME_HITBOX_W = 122;
+  private static readonly SPECIAL_FLAME_HITBOX_H = 26;
+  private static readonly SPECIAL_FLAME_DESPAWN_MARGIN = 120;
+  private static readonly SPECIAL_LOGO_SPAWN_MIN_Y = 250;
+  private static readonly SPECIAL_LOGO_SPAWN_MAX_Y = 315;
+  private static readonly ATTACK_FLAME_TEXTURE_KEYS = [
+    "player-attack-flame-1",
+    "player-attack-flame-2",
+    "player-attack-flame-3",
+    "player-attack-flame-4",
+    "player-attack-flame",
+  ] as const;
+  private static readonly ITEM_PICKUP_EFFECT_TEXTURE_KEYS = [
+    "item-effect-pickup-1",
+    "item-effect-pickup-2",
+    "item-effect-pickup-3",
+    "item-effect-pickup-4",
+    "item-effect-pickup-5",
+    "item-effect-pickup-6",
+  ] as const;
+  private static readonly SKILL_HOLD_EFFECT_TEXTURE_KEYS = [
+    "item-effect-pickup-1",
+    "item-effect-pickup-2",
+    "item-effect-pickup-3",
+    "item-effect-pickup-4",
+    "item-effect-pickup-5",
+    "item-effect-pickup-6",
+  ] as const;
+  private static readonly SKILL_HOLD_FRAME_MS = 90;
 
   private player!: Phaser.Types.Physics.Arcade.SpriteWithDynamicBody;
+  private itemCollector!: Phaser.GameObjects.Rectangle;
   private mode = createPlayerMode();
   private run: RunState = createRunState();
   private platforms!: Phaser.Physics.Arcade.StaticGroup;
@@ -98,6 +143,7 @@ export class GameScene extends Phaser.Scene {
   private keyUp!: Phaser.Input.Keyboard.Key;
   private keyX!: Phaser.Input.Keyboard.Key;
   private keyShift!: Phaser.Input.Keyboard.Key;
+  private keyC!: Phaser.Input.Keyboard.Key;
   private ended = false;
   private nextEnergyDrinkSpawnAtMs = 0;
   /** 直近スポーン時のプレイヤーX（スポーン世界座標ではない。距離クールのバグ防止） */
@@ -107,6 +153,11 @@ export class GameScene extends Phaser.Scene {
   private nextSnatcherSpawnAtMs = 0;
   private snatcherJumpUnlocked = false;
   private staffSystem: StaffSystemState = createStaffSystemState();
+  private specialFlameShots: SpecialFlameShot[] = [];
+  private nextSpecialLogoSpawnAtMs = 0;
+  private lastSpecialLogoSpawnPlayerX = Number.NEGATIVE_INFINITY;
+  private hasStoredSpecialSkill = false;
+  private specialSkillAura?: Phaser.GameObjects.Image;
 
   constructor() {
     super("GameScene");
@@ -128,6 +179,12 @@ export class GameScene extends Phaser.Scene {
     this.nextSnatcherSpawnAtMs = 0;
     this.snatcherJumpUnlocked = false;
     this.staffSystem = createStaffSystemState();
+    this.specialFlameShots = [];
+    this.nextSpecialLogoSpawnAtMs = 0;
+    this.lastSpecialLogoSpawnPlayerX = Number.NEGATIVE_INFINITY;
+    this.hasStoredSpecialSkill = false;
+    this.specialSkillAura?.destroy();
+    this.specialSkillAura = undefined;
     this.physics.resume();
 
     this.background = createBackgroundLayers(this);
@@ -150,13 +207,31 @@ export class GameScene extends Phaser.Scene {
     // レール等のワールド要素より手前に描画して、重なりで埋もれて見えるのを防ぐ
     this.player.setDepth(10);
     this.player.play("player-run");
+    // アイテム取得専用センサー。胴体の被弾・地形当たり判定と分離して首付近を拾いやすくする
+    this.itemCollector = this.add
+      .rectangle(
+        this.player.x,
+        this.player.y + GameScene.ITEM_COLLECTOR_OFFSET_Y,
+        GameScene.ITEM_COLLECTOR_W,
+        GameScene.ITEM_COLLECTOR_H,
+        0x00ff00,
+        0,
+      )
+      .setDepth(1);
+    this.physics.add.existing(this.itemCollector);
+    const collectorBody = this.itemCollector.body as Phaser.Physics.Arcade.Body;
+    collectorBody.setAllowGravity(false);
+    collectorBody.setImmovable(true);
     this.attackFlame = this.add
-      .image(this.player.x, this.player.y, "player-attack-flame")
+      .image(this.player.x, this.player.y, this.pickAttackFlameTextureKey())
       .setDepth(12)
       .setVisible(false);
 
     this.spawner = createChunkSpawnerState(0);
     this.nextEnergyDrinkSpawnAtMs = this.pickNextEnergyDrinkSpawnMs(
+      performance.now(),
+    );
+    this.nextSpecialLogoSpawnAtMs = this.pickNextSpecialLogoSpawnMs(
       performance.now(),
     );
     this.nextSnatcherSpawnAtMs = performance.now();
@@ -165,6 +240,9 @@ export class GameScene extends Phaser.Scene {
     registerCollisions({
       scene: this,
       player: this.player,
+      itemCollector: this.itemCollector as Phaser.GameObjects.Rectangle & {
+        body: Phaser.Physics.Arcade.Body;
+      },
       platforms: this.platforms,
       items: this.items,
       hazards: this.hazards,
@@ -175,7 +253,7 @@ export class GameScene extends Phaser.Scene {
     this.events.on(
       "pickup-yen-popup",
       (payload: { yen: number }) => {
-        // 視認性向上のため、取得時は常にプレイヤー頭上へ表示する
+        // 通常取得時は金額ポップアップのみ表示する
         this.spawnYenPopup(this.player.x, this.player.y - 73, payload.yen, {
           followPlayer: true,
           isLoss: false,
@@ -188,6 +266,9 @@ export class GameScene extends Phaser.Scene {
         isLoss: true,
       });
     });
+    this.events.on("pickup-seven-logo-special", () => {
+      this.storeSpecialSkill();
+    });
 
     const kb = this.input.keyboard;
     if (kb) {
@@ -195,6 +276,7 @@ export class GameScene extends Phaser.Scene {
       this.keyUp = kb.addKey(Phaser.Input.Keyboard.KeyCodes.UP);
       this.keyX = kb.addKey(Phaser.Input.Keyboard.KeyCodes.X);
       this.keyShift = kb.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
+      this.keyC = kb.addKey(Phaser.Input.Keyboard.KeyCodes.C);
     }
 
     this.touchControlsUi = createTouchControls(this, {
@@ -205,6 +287,9 @@ export class GameScene extends Phaser.Scene {
       onAttack: () => {
         const attacked = tryAttack(this.mode, performance.now());
         if (attacked) sfxAttack();
+      },
+      onSkill: () => {
+        this.activateStoredSpecialSkill();
       },
     });
 
@@ -235,10 +320,25 @@ export class GameScene extends Phaser.Scene {
 
     updatePlayerPhysics(this.player, this.mode, scrollSpeed, now);
     updatePlayerVisual(this.player, this.mode);
+    this.updateItemCollectorPosition();
     applyInvincibilityVisual(this.player, this.mode, now);
 
-    handleDesktopKeyboard(this.player, this.mode, { space: this.keySpace, up: this.keyUp, x: this.keyX, shift: this.keyShift }, now);
+    handleDesktopKeyboard(
+      this.player,
+      this.mode,
+      {
+        space: this.keySpace,
+        up: this.keyUp,
+        x: this.keyX,
+        shift: this.keyShift,
+        c: this.keyC,
+      },
+      now,
+      () => this.activateStoredSpecialSkill(),
+    );
     this.updateAttackFlameAndHits(now);
+    this.updateSpecialFlameShots(deltaSec);
+    this.updateSpecialSkillAura(now);
 
     this.updateSnatcherJumpUnlock();
     this.updateSnatcherJumpBehavior(now);
@@ -246,6 +346,7 @@ export class GameScene extends Phaser.Scene {
     this.touchControlsUi?.setAttackCooldownRemainingMs(
       getAttackCooldownRemainingMs(this.mode, now),
     );
+    this.touchControlsUi?.setSkillReady(this.hasStoredSpecialSkill);
 
     this.updateRainbowPickupItems(now);
     this.updateSpoiledPickupItems(now);
@@ -254,6 +355,8 @@ export class GameScene extends Phaser.Scene {
     this.spawnMilestoneSnatchers(now);
     this.cullStaleEnergyDrinks(this.cameras.main.scrollX);
     this.spawnTimedEnergyDrink(now, this.player.x);
+    this.cullStaleSpecialLogos(this.cameras.main.scrollX);
+    this.spawnTimedSpecialLogo(now, this.player.x);
     this.updateStaffNpcAndSpeech(now, scrollSpeed);
     cleanupOldChunks(this.chunks, this.cameras.main.scrollX);
 
@@ -272,12 +375,28 @@ export class GameScene extends Phaser.Scene {
     return GameScene.ADVANCED_MODE_ELAPSED_BONUS_SEC;
   }
 
+  private updateItemCollectorPosition(): void {
+    if (!this.itemCollector?.active) return;
+    this.itemCollector.setPosition(
+      this.player.x,
+      this.player.y + GameScene.ITEM_COLLECTOR_OFFSET_Y,
+    );
+  }
+
   /** 栄養ドリンク取得物のレインボー演出（無敵アイテムの視認性） */
   private updateRainbowPickupItems(now: number): void {
     const children = this.items.getChildren() as Phaser.GameObjects.Image[];
     for (const im of children) {
       if (!im?.active) continue;
       const id = im.getData("itemId") as string | undefined;
+      if (id === "seven_special_logo") {
+        // ロゴは金色寄りの明滅でスペシャル感を出す
+        const phase = (now % 1100) / 1100;
+        const pulse = 0.78 + 0.22 * (0.5 + 0.5 * Math.sin(phase * Math.PI * 2));
+        im.setTint(0xfff4a3);
+        im.setAlpha(pulse);
+        continue;
+      }
       if (id !== "energy_drink") continue;
       const phase = (now % 2400) / 2400;
       const r = Math.floor(210 + 45 * Math.sin(phase * Math.PI * 2));
@@ -386,6 +505,11 @@ export class GameScene extends Phaser.Scene {
     return baseNowMs + Phaser.Math.Between(6000, 8000);
   }
 
+  private pickNextSpecialLogoSpawnMs(baseNowMs: number): number {
+    // スペシャルロゴは強力なので、栄養ドリンクより長めの間隔にする
+    return baseNowMs + Phaser.Math.Between(11000, 14500);
+  }
+
   /** 画面外左に残った栄養ドリンクを破棄（未取得のまま hasActive が固まるのを防ぐ） */
   private cullStaleEnergyDrinks(scrollX: number): void {
     const margin = 420;
@@ -415,6 +539,247 @@ export class GameScene extends Phaser.Scene {
     return items.some(
       (item) => item.active && item.getData("itemId") === "energy_drink",
     );
+  }
+
+  private hasActiveSpecialLogo(): boolean {
+    const items = this.items.getChildren() as Phaser.GameObjects.Image[];
+    return items.some(
+      (item) => item.active && item.getData("itemId") === "seven_special_logo",
+    );
+  }
+
+  private cullStaleSpecialLogos(scrollX: number): void {
+    const margin = 420;
+    const children = this.items.getChildren() as Phaser.GameObjects.Image[];
+    for (const im of children) {
+      if (!im?.active) continue;
+      if (im.getData("itemId") !== "seven_special_logo") continue;
+      if (im.x < scrollX - margin) im.destroy();
+    }
+  }
+
+  private spawnTimedSpecialLogo(nowMs: number, playerX: number): void {
+    if (nowMs < this.nextSpecialLogoSpawnAtMs) return;
+    if (this.hasActiveSpecialLogo()) return;
+    if (playerX - this.lastSpecialLogoSpawnPlayerX < 1650) return;
+
+    const spawnX = playerX + GAME_WIDTH * 0.95;
+    const spawnY = Phaser.Math.Between(
+      GameScene.SPECIAL_LOGO_SPAWN_MIN_Y,
+      GameScene.SPECIAL_LOGO_SPAWN_MAX_Y,
+    );
+    spawnPickupItem(this, this.items, spawnX, spawnY, "seven_special_logo");
+    this.lastSpecialLogoSpawnPlayerX = playerX;
+    this.nextSpecialLogoSpawnAtMs = this.pickNextSpecialLogoSpawnMs(nowMs);
+  }
+
+  private storeSpecialSkill(): void {
+    this.hasStoredSpecialSkill = true;
+    // 取得時のみ短い取得エフェクトを表示する
+    this.spawnItemPickupEffect(this.player.x, this.player.y - 68);
+    this.ensureSpecialSkillAura();
+  }
+
+  private activateStoredSpecialSkill(): void {
+    if (!this.hasStoredSpecialSkill) return;
+    this.hasStoredSpecialSkill = false;
+    this.specialSkillAura?.destroy();
+    this.specialSkillAura = undefined;
+    sfxSpecialActivate();
+    this.fireSpecialLogoFlames();
+  }
+
+  private ensureSpecialSkillAura(): void {
+    if (!this.hasStoredSpecialSkill) return;
+    if (this.specialSkillAura?.active) return;
+    const loaded = GameScene.SKILL_HOLD_EFFECT_TEXTURE_KEYS.filter((key) =>
+      this.textures.exists(key),
+    );
+    if (loaded.length === 0) return;
+    const key = Phaser.Utils.Array.GetRandom([...loaded]);
+    this.specialSkillAura = this.add
+      .image(this.player.x, this.player.y - 40, key)
+      .setDepth(9)
+      .setAlpha(0.26);
+    // 保持中オーラは主張しすぎない中サイズに固定する
+    this.specialSkillAura.setDisplaySize(192, 192);
+  }
+
+  private updateSpecialSkillAura(now: number): void {
+    if (!this.hasStoredSpecialSkill) {
+      this.specialSkillAura?.destroy();
+      this.specialSkillAura = undefined;
+      return;
+    }
+    this.ensureSpecialSkillAura();
+    if (!this.specialSkillAura?.active) return;
+    const loaded = GameScene.SKILL_HOLD_EFFECT_TEXTURE_KEYS.filter((key) =>
+      this.textures.exists(key),
+    );
+    if (loaded.length > 0) {
+      // 保持演出は拡大縮小ではなく、6枚差分をコマ送りで再生する
+      const frame = Math.floor(now / GameScene.SKILL_HOLD_FRAME_MS) % loaded.length;
+      this.specialSkillAura.setTexture(loaded[frame]!);
+    }
+    const phase = (now % 1200) / 1200;
+    const alpha = 0.18 + 0.14 * (0.5 + 0.5 * Math.sin(phase * Math.PI * 2));
+    this.specialSkillAura
+      .setPosition(this.player.x, this.player.y - 40)
+      .setAlpha(alpha);
+  }
+
+  private fireSpecialLogoFlames(): void {
+    const mouthCenterY = this.player.y - 75;
+    const playerBody = this.player.body;
+    // 口元基準の間隔に +5px して、上下の抜けを強める
+    const spacing = Phaser.Math.Clamp(
+      playerBody.height * GameScene.SPECIAL_FLAME_SPACING_RATIO + 5,
+      21,
+      34,
+    );
+    const halfSpread = spacing * (GameScene.SPECIAL_FLAME_COUNT - 1) * 0.5;
+    // 地面に少し埋まるのは許容し、画面外だけを避ける
+    const clampedCenterY = Phaser.Math.Clamp(
+      mouthCenterY,
+      30 + halfSpread,
+      GAME_HEIGHT - 8 - halfSpread,
+    );
+
+    for (let i = 0; i < GameScene.SPECIAL_FLAME_COUNT; i += 1) {
+      const offsetIndex = i - (GameScene.SPECIAL_FLAME_COUNT - 1) / 2;
+      const y = clampedCenterY + offsetIndex * spacing;
+      const sprite = this.add
+        .image(this.player.x + 56, y, this.pickAttackFlameTextureKey())
+        .setDepth(12)
+        .setDisplaySize(74, 30)
+        .setAlpha(0.94);
+      this.tweens.add({
+        targets: sprite,
+        alpha: { from: 0.7, to: 1 },
+        duration: 130,
+        yoyo: true,
+        repeat: 1,
+      });
+      this.specialFlameShots.push({
+        sprite,
+        hitHazards: new Set(),
+        hitDestructibles: new Set(),
+      });
+    }
+
+    // 取得直後の爽快感を出すため、短いフラッシュを重ねる
+    const flash = this.add
+      .circle(this.player.x + 28, clampedCenterY, 28, 0xfff1a8, 0.6)
+      .setDepth(13);
+    this.tweens.add({
+      targets: flash,
+      alpha: 0,
+      scale: 2.1,
+      duration: 220,
+      ease: "Quad.Out",
+      onComplete: () => flash.destroy(),
+    });
+  }
+
+  private updateSpecialFlameShots(deltaSec: number): void {
+    if (this.specialFlameShots.length === 0) return;
+
+    const hitHazards: Phaser.GameObjects.Image[] = [];
+    const hitDestructibles: Phaser.GameObjects.Image[] = [];
+    const rightEdge =
+      this.cameras.main.scrollX +
+      GAME_WIDTH +
+      GameScene.SPECIAL_FLAME_DESPAWN_MARGIN;
+
+    for (let i = this.specialFlameShots.length - 1; i >= 0; i -= 1) {
+      const shot = this.specialFlameShots[i];
+      if (!shot.sprite.active) {
+        this.specialFlameShots.splice(i, 1);
+        continue;
+      }
+
+      shot.sprite.x += GameScene.SPECIAL_FLAME_SPEED * deltaSec;
+      if (shot.sprite.x > rightEdge) {
+        shot.sprite.destroy();
+        this.specialFlameShots.splice(i, 1);
+        continue;
+      }
+
+      const flameRect = new Phaser.Geom.Rectangle(
+        shot.sprite.x + 4,
+        shot.sprite.y - GameScene.SPECIAL_FLAME_HITBOX_H * 0.5,
+        GameScene.SPECIAL_FLAME_HITBOX_W,
+        GameScene.SPECIAL_FLAME_HITBOX_H,
+      );
+
+      const hazards = this.hazards.getChildren() as Phaser.GameObjects.Image[];
+      for (const hz of hazards) {
+        if (!hz.active) continue;
+        if (hz.getData("isDefeated")) continue;
+        if (shot.hitHazards.has(hz)) continue;
+        const body = (hz as Phaser.GameObjects.Image & {
+          body?: Phaser.Physics.Arcade.Body;
+        }).body;
+        if (!body || !body.enable) continue;
+        if (!this.isRectOverlappingBody(flameRect, body)) continue;
+        shot.hitHazards.add(hz);
+        hitHazards.push(hz);
+      }
+
+      const destructibles = this.destructibles.getChildren() as Phaser.GameObjects.Image[];
+      for (const dst of destructibles) {
+        if (!dst.active) continue;
+        if (shot.hitDestructibles.has(dst)) continue;
+        const body = (dst as Phaser.GameObjects.Image & {
+          body?: Phaser.Physics.Arcade.Body;
+        }).body;
+        if (!body || !body.enable) continue;
+        if (!this.isRectOverlappingBody(flameRect, body)) continue;
+        shot.hitDestructibles.add(dst);
+        hitDestructibles.push(dst);
+      }
+    }
+
+    let defeatedSnatcher = false;
+    let otherFlameHazard = false;
+    for (const hz of hitHazards) {
+      if (!hz.active) continue;
+      const kind = hz.getData("kind") as "shoplifter" | "biker" | undefined;
+      if (kind === "shoplifter") {
+        this.spawnAttackHitEffect(hz.x, hz.y, "destructible");
+        const bonusYen = 1000;
+        this.run.cartYen += bonusYen;
+        this.run.receiptLines.push({
+          name: "（ひったくり撃退ボーナス）",
+          yen: bonusYen,
+        });
+        this.spawnYenPopup(hz.x, hz.y - 22, bonusYen);
+        this.playSnatcherDefeatEffect(hz);
+        defeatedSnatcher = true;
+        continue;
+      }
+      this.spawnAttackHitEffect(hz.x, hz.y, "hazard");
+      hz.destroy();
+      otherFlameHazard = true;
+    }
+
+    let brokeDestructible = false;
+    for (const dst of hitDestructibles) {
+      if (!dst.active) continue;
+      const dropX = dst.x;
+      const dropY = dst.y - 40;
+      this.spawnAttackHitEffect(dst.x, dst.y, "hazard");
+      dst.destroy();
+      spawnPickupItem(this, this.items, dropX, dropY, randomItemId());
+      brokeDestructible = true;
+    }
+
+    if (defeatedSnatcher) {
+      sfxSnatcherDefeat();
+      sfxSpecialHitEnemy();
+    }
+    if (otherFlameHazard || hitDestructibles.length > 0) sfxSpecialHitObject();
+    if (brokeDestructible) sfxBreak();
   }
 
   private spawnMilestoneSnatchers(now: number): void {
@@ -653,9 +1018,9 @@ export class GameScene extends Phaser.Scene {
     let otherFlameHazard = false;
     for (const hz of hitHazards) {
       if (!hz.active) continue;
-      this.spawnAttackHitEffect(hz.x, hz.y, 0xffd166);
       const kind = hz.getData("kind") as "shoplifter" | "biker" | undefined;
       if (kind === "shoplifter") {
+        this.spawnAttackHitEffect(hz.x, hz.y, "destructible");
         const bonusYen = 1000;
         this.run.cartYen += bonusYen;
         this.run.receiptLines.push({
@@ -668,6 +1033,7 @@ export class GameScene extends Phaser.Scene {
         defeatedSnatcher = true;
         continue;
       }
+      this.spawnAttackHitEffect(hz.x, hz.y, "hazard");
       hz.destroy();
       otherFlameHazard = true;
     }
@@ -683,7 +1049,7 @@ export class GameScene extends Phaser.Scene {
       if (!dst.active) continue;
       const dropX = dst.x;
       const dropY = dst.y - 40;
-      this.spawnAttackHitEffect(dst.x, dst.y, 0xffb84d);
+      this.spawnAttackHitEffect(dst.x, dst.y, "hazard");
       dst.destroy();
       sfxBreak();
       spawnPickupItem(this, this.items, dropX, dropY, randomItemId());
@@ -706,136 +1072,55 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
-  private spawnAttackHitEffect(x: number, y: number, color: number): void {
-    const slowMotionFactor = 1.9;
+  private pickAttackFlameTextureKey(): string {
+    const loaded = GameScene.ATTACK_FLAME_TEXTURE_KEYS.filter((key) =>
+      this.textures.exists(key),
+    );
+    if (loaded.length === 0) return "player-attack-flame";
+    return Phaser.Utils.Array.GetRandom([...loaded]);
+  }
 
-    // 命中位置に短いフラッシュを出して、当たりの視認性を上げる
-    const flash = this.add.circle(x, y, 11, color, 0.92).setDepth(13);
+  private spawnItemPickupEffect(x: number, y: number): void {
+    const loaded = GameScene.ITEM_PICKUP_EFFECT_TEXTURE_KEYS.filter((key) =>
+      this.textures.exists(key),
+    );
+    if (loaded.length === 0) return;
+    const key = Phaser.Utils.Array.GetRandom([...loaded]);
+    const effect = this.add.image(x, y, key).setDepth(13).setAlpha(1);
+    effect.setDisplaySize(9, 9);
     this.tweens.add({
-      targets: flash,
+      targets: effect,
+      y: y - 16,
       alpha: 0,
-      scale: 1.9,
-      duration: 120 * slowMotionFactor,
+      scaleX: 1.16,
+      scaleY: 1.16,
+      duration: 240,
       ease: "Quad.Out",
-      onComplete: () => flash.destroy(),
+      onComplete: () => effect.destroy(),
     });
+  }
 
-    // 余韻のコアを追加して、破壊の中心位置を認識しやすくする
-    const core = this.add.circle(x, y, 7, 0xffffff, 0.7).setDepth(13);
+  private spawnAttackHitEffect(
+    x: number,
+    y: number,
+    kind: "hazard" | "destructible",
+  ): void {
+    const key =
+      kind === "destructible" ? "hit-effect-destructible-1" : "hit-effect-hazard-1";
+    if (!this.textures.exists(key)) return;
+    const effect = this.add.image(x, y, key).setDepth(13).setAlpha(0.96);
+    effect.setDisplaySize(9, 9);
     this.tweens.add({
-      targets: core,
+      targets: effect,
       alpha: 0,
-      scale: 2.2,
-      duration: 180 * slowMotionFactor,
+      scaleX: 1.34,
+      scaleY: 1.34,
+      duration: 180,
       ease: "Quad.Out",
-      onComplete: () => core.destroy(),
+      onComplete: () => effect.destroy(),
     });
-
-    // 外側リングを追加して、ヒット範囲を一瞬で把握しやすくする
-    const ring = this.add.circle(x, y, 9).setDepth(13);
-    ring.setStrokeStyle(2, 0xfff0b3, 0.95);
-    this.tweens.add({
-      targets: ring,
-      alpha: 0,
-      scale: 2.4,
-      duration: 150 * slowMotionFactor,
-      ease: "Sine.Out",
-      onComplete: () => ring.destroy(),
-    });
-
-    // もう一段外側の衝撃波を足して、破壊時の存在感を強める
-    const shockwave = this.add.circle(x, y, 14).setDepth(13);
-    shockwave.setStrokeStyle(3, 0xffffff, 0.65);
-    this.tweens.add({
-      targets: shockwave,
-      alpha: 0,
-      scale: 3.4,
-      duration: 220 * slowMotionFactor,
-      ease: "Quad.Out",
-      onComplete: () => shockwave.destroy(),
-    });
-
-    // 破片スパークを増やし、大小混在でリッチに見せる
-    for (let i = 0; i < 12; i += 1) {
-      const isLarge = i % 3 === 0;
-      const sparkColor = isLarge ? 0xfff3c4 : color;
-      const spark = this.add
-        .rectangle(x, y, isLarge ? 8 : 5, isLarge ? 4 : 2, sparkColor, 0.95)
-        .setDepth(13);
-      const angle = Phaser.Math.FloatBetween(-1.1, 1.1);
-      const distance = Phaser.Math.Between(18, isLarge ? 52 : 40);
-      const targetX = x + Math.cos(angle) * distance;
-      const targetY = y + Math.sin(angle) * distance - Phaser.Math.Between(6, 18);
-      this.tweens.add({
-        targets: spark,
-        x: targetX,
-        y: targetY,
-        alpha: 0,
-        angle: Phaser.Math.Between(-70, 70),
-        scaleX: Phaser.Math.FloatBetween(0.6, 1.2),
-        scaleY: Phaser.Math.FloatBetween(0.6, 1.2),
-        duration: Phaser.Math.Between(
-          150 * slowMotionFactor,
-          220 * slowMotionFactor,
-        ),
-        ease: "Cubic.Out",
-        onComplete: () => spark.destroy(),
-      });
-    }
-
-    // 煙っぽい余韻を追加して、破壊の印象を残す
-    for (let i = 0; i < 3; i += 1) {
-      const puff = this.add
-        .circle(
-          x + Phaser.Math.Between(-8, 8),
-          y + Phaser.Math.Between(-6, 6),
-          Phaser.Math.Between(6, 10),
-          0x7a7a7a,
-          0.26,
-        )
-        .setDepth(12);
-      this.tweens.add({
-        targets: puff,
-        y: puff.y - Phaser.Math.Between(12, 24),
-        alpha: 0,
-        scale: Phaser.Math.FloatBetween(1.4, 1.9),
-        duration: Phaser.Math.Between(
-          220 * slowMotionFactor,
-          320 * slowMotionFactor,
-        ),
-        ease: "Sine.Out",
-        onComplete: () => puff.destroy(),
-      });
-    }
-
-    // 余熱エンバーを加えて、破壊後のリッチ感を強める
-    for (let i = 0; i < 5; i += 1) {
-      const ember = this.add
-        .circle(
-          x + Phaser.Math.Between(-10, 10),
-          y + Phaser.Math.Between(-8, 8),
-          Phaser.Math.Between(2, 4),
-          0xff9f43,
-          0.85,
-        )
-        .setDepth(13);
-      this.tweens.add({
-        targets: ember,
-        x: ember.x + Phaser.Math.Between(12, 28),
-        y: ember.y - Phaser.Math.Between(10, 24),
-        alpha: 0,
-        scale: Phaser.Math.FloatBetween(0.5, 1.2),
-        duration: Phaser.Math.Between(
-          180 * slowMotionFactor,
-          280 * slowMotionFactor,
-        ),
-        ease: "Quad.Out",
-        onComplete: () => ember.destroy(),
-      });
-    }
-
-    // 視認性を優先して、シェイクを少し長く弱めにして残像感を出す
-    this.cameras.main.shake(110, 0.0014, true);
+    // ヒット感は少しだけ残す
+    this.cameras.main.shake(70, 0.0012, true);
   }
 
   private spawnYenPopup(
