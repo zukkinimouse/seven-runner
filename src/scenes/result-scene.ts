@@ -19,6 +19,8 @@ export class ResultScene extends Phaser.Scene {
   private payload?: RunResultPayload;
   private syncStatus: "success" | "failed" | "pending" | "disabled" = "disabled";
   private canNavigate = false;
+  private nicknameModalEl?: HTMLDivElement;
+  private muteBeforeNicknameModal = false;
 
   private setObjectsVisible(
     objects: Phaser.GameObjects.GameObject[],
@@ -478,19 +480,131 @@ export class ResultScene extends Phaser.Scene {
   private promptNicknameIfNeeded(): void {
     const save = loadSave();
     if (save.nicknamePrompted) return;
-    const raw = window.prompt(
-      "ランキング表示名を入力してください（1〜20文字）\n未入力のままOKでスキップできます。",
-      save.nickname,
-    );
-    let nextNickname = save.nickname;
-    if (typeof raw === "string") {
-      const trimmed = raw.trim().slice(0, 20);
-      if (trimmed.length > 0) nextNickname = trimmed;
-    }
-    writeSave({
-      ...save,
-      nickname: nextNickname,
-      nicknamePrompted: true,
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    // 入力中は無音にして、体験を邪魔しない
+    this.muteBeforeNicknameModal = this.sound.mute;
+    this.sound.mute = true;
+
+    const modal = document.createElement("div");
+    modal.style.position = "fixed";
+    modal.style.inset = "0";
+    modal.style.background = "rgba(2,6,23,0.72)";
+    modal.style.display = "flex";
+    modal.style.alignItems = "center";
+    modal.style.justifyContent = "center";
+    modal.style.zIndex = "9999";
+
+    const panel = document.createElement("div");
+    panel.style.width = "min(92vw, 420px)";
+    panel.style.background = "#111827";
+    panel.style.border = "2px solid #fbbf24";
+    panel.style.borderRadius = "14px";
+    panel.style.padding = "16px";
+    panel.style.boxSizing = "border-box";
+    panel.style.color = "#f8fafc";
+    panel.style.fontFamily = "sans-serif";
+
+    const title = document.createElement("div");
+    title.textContent = "ニックネーム入力";
+    title.style.fontWeight = "700";
+    title.style.fontSize = "20px";
+    title.style.marginBottom = "8px";
+
+    const hint = document.createElement("div");
+    hint.textContent = "ランキング表示名を入力してください（1〜20文字）";
+    hint.style.fontSize = "13px";
+    hint.style.marginBottom = "10px";
+    hint.style.opacity = "0.9";
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.maxLength = 20;
+    input.value = save.nickname;
+    input.placeholder = "ゲスト名";
+    input.style.width = "100%";
+    input.style.height = "40px";
+    input.style.borderRadius = "10px";
+    input.style.border = "1px solid #94a3b8";
+    input.style.padding = "0 12px";
+    input.style.fontSize = "16px";
+    input.style.boxSizing = "border-box";
+
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.gap = "10px";
+    actions.style.marginTop = "14px";
+
+    const skipButton = document.createElement("button");
+    skipButton.textContent = "スキップ";
+    skipButton.style.flex = "1";
+    skipButton.style.height = "40px";
+    skipButton.style.borderRadius = "10px";
+    skipButton.style.border = "1px solid #64748b";
+    skipButton.style.background = "#334155";
+    skipButton.style.color = "#f8fafc";
+    skipButton.style.cursor = "pointer";
+
+    const saveButton = document.createElement("button");
+    saveButton.textContent = "保存";
+    saveButton.style.flex = "1";
+    saveButton.style.height = "40px";
+    saveButton.style.borderRadius = "10px";
+    saveButton.style.border = "1px solid #f59e0b";
+    saveButton.style.background = "#fbbf24";
+    saveButton.style.color = "#3f2a00";
+    saveButton.style.fontWeight = "700";
+    saveButton.style.cursor = "pointer";
+
+    const closeModal = (): void => {
+      this.sound.mute = this.muteBeforeNicknameModal;
+      modal.remove();
+      this.nicknameModalEl = undefined;
+    };
+
+    skipButton.onclick = () => {
+      writeSave({
+        ...save,
+        nicknamePrompted: true,
+      });
+      closeModal();
+    };
+
+    saveButton.onclick = () => {
+      const trimmed = input.value.trim().slice(0, 20);
+      const nextNickname = trimmed.length > 0 ? trimmed : save.nickname;
+      writeSave({
+        ...save,
+        nickname: nextNickname,
+        nicknamePrompted: true,
+      });
+      closeModal();
+    };
+
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        saveButton.click();
+      }
+    });
+
+    actions.append(skipButton, saveButton);
+    panel.append(title, hint, input, actions);
+    modal.append(panel);
+    document.body.append(modal);
+    this.nicknameModalEl = modal;
+    window.setTimeout(() => input.focus(), 0);
+
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      if (!this.nicknameModalEl) return;
+      this.sound.mute = this.muteBeforeNicknameModal;
+      this.nicknameModalEl.remove();
+      this.nicknameModalEl = undefined;
+    });
+    this.events.once(Phaser.Scenes.Events.DESTROY, () => {
+      if (!this.nicknameModalEl) return;
+      this.sound.mute = this.muteBeforeNicknameModal;
+      this.nicknameModalEl.remove();
+      this.nicknameModalEl = undefined;
     });
   }
 

@@ -92,7 +92,9 @@ export function transitionToResult(
       }
       startResultScene("success");
     })
-    .catch(() => {
+    .catch((error: unknown) => {
+      // 同期失敗時の調査をしやすくするため、開発時はログを残す
+      console.error("ranking sync failed", error);
       if (!settled) {
         settled = true;
         timeout.remove(false);
