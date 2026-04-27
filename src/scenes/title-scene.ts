@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { setAudioMuted, setSeVolume, sfxPickup } from "../game/audio/sfx";
-import { loadSave, writeAudioSettings } from "../game/persistence/storage";
+import { loadSave, writeAudioSettings, writeNickname } from "../game/persistence/storage";
 
 export class TitleScene extends Phaser.Scene {
   private static readonly GOLD = {
@@ -21,6 +21,7 @@ export class TitleScene extends Phaser.Scene {
   private isInfoModalOpen = false;
   private canStart = true;
   private bgm?: Phaser.Sound.BaseSound;
+  private nicknameModalEl?: HTMLDivElement;
 
   constructor() {
     super("TitleScene");
@@ -732,6 +733,7 @@ export class TitleScene extends Phaser.Scene {
       let bgmVolume = current.bgmVolume;
       let seVolume = current.seVolume;
       let muted = current.muted;
+      let nickname = current.nickname;
       let lastSePreviewAt = 0;
       const applySettings = (): void => {
         const next = writeAudioSettings({ bgmVolume, seVolume, muted });
@@ -871,6 +873,58 @@ export class TitleScene extends Phaser.Scene {
       controls.push(muteButton, muteText);
       applySettings();
       muteText.setText(`ミュート: ${muted ? "ON" : "OFF"}`);
+
+      const nicknameCardY = centerY + 94;
+      const nicknameCard = this.add
+        .rectangle(centerX, nicknameCardY, Math.min(300, modalW - 60), 58, 0x1f2937, 0.94)
+        .setStrokeStyle(2, 0xfde68a, 0.85)
+        .setDepth(202);
+      nicknameCard.setRounded?.(12);
+      const nicknameLabel = this.add
+        .text(centerX, nicknameCardY - 12, "ニックネーム", {
+          fontSize: "14px",
+          color: "#fef3c7",
+          fontStyle: "bold",
+        })
+        .setOrigin(0.5, 0.5)
+        .setDepth(203);
+      const nicknameValue = this.add
+        .text(centerX, nicknameCardY + 8, nickname, {
+          fontSize: "16px",
+          color: "#f8fafc",
+          fontStyle: "bold",
+        })
+        .setOrigin(0.5, 0.5)
+        .setDepth(203);
+
+      const nicknameButton = this.add
+        .rectangle(centerX, nicknameCardY + 46, 160, 34, 0xfbbf24, 0.96)
+        .setStrokeStyle(2, 0xf59e0b, 0.95)
+        .setDepth(202)
+        .setInteractive({ useHandCursor: true });
+      nicknameButton.setRounded?.(10);
+      const nicknameButtonText = this.add
+        .text(centerX, nicknameCardY + 46, "名前を変更", {
+          fontSize: "15px",
+          color: "#4a3500",
+          fontStyle: "bold",
+        })
+        .setOrigin(0.5)
+        .setDepth(203);
+
+      nicknameButton.on("pointerdown", () => {
+        this.openNicknameEditModal(nickname, (nextNickname) => {
+          nickname = writeNickname(nextNickname).nickname;
+          nicknameValue.setText(nickname);
+        });
+      });
+      controls.push(
+        nicknameCard,
+        nicknameLabel,
+        nicknameValue,
+        nicknameButton,
+        nicknameButtonText,
+      );
     } else {
       const body = this.add
         .text(centerX, centerY - 10, payload.lines.join("\n"), {
@@ -911,6 +965,112 @@ export class TitleScene extends Phaser.Scene {
     this.infoModalLayer.destroy(true);
     this.infoModalLayer = undefined;
     this.isInfoModalOpen = false;
+    if (this.nicknameModalEl) {
+      this.nicknameModalEl.remove();
+      this.nicknameModalEl = undefined;
+    }
+  }
+
+  private openNicknameEditModal(
+    currentNickname: string,
+    onSave: (nextNickname: string) => void,
+  ): void {
+    if (typeof document === "undefined") return;
+    if (this.nicknameModalEl) {
+      this.nicknameModalEl.remove();
+      this.nicknameModalEl = undefined;
+    }
+    const modal = document.createElement("div");
+    modal.style.position = "fixed";
+    modal.style.inset = "0";
+    modal.style.background = "rgba(2,6,23,0.72)";
+    modal.style.display = "flex";
+    modal.style.alignItems = "center";
+    modal.style.justifyContent = "center";
+    modal.style.zIndex = "10000";
+
+    const panel = document.createElement("div");
+    panel.style.width = "min(92vw, 420px)";
+    panel.style.background = "#111827";
+    panel.style.border = "2px solid #fbbf24";
+    panel.style.borderRadius = "14px";
+    panel.style.padding = "16px";
+    panel.style.boxSizing = "border-box";
+    panel.style.color = "#f8fafc";
+    panel.style.fontFamily = "sans-serif";
+
+    const title = document.createElement("div");
+    title.textContent = "ニックネーム変更";
+    title.style.fontWeight = "700";
+    title.style.fontSize = "20px";
+    title.style.marginBottom = "8px";
+
+    const hint = document.createElement("div");
+    hint.textContent = "1〜20文字（改行不可）";
+    hint.style.fontSize = "13px";
+    hint.style.marginBottom = "10px";
+    hint.style.opacity = "0.9";
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.maxLength = 20;
+    input.value = currentNickname;
+    input.style.width = "100%";
+    input.style.height = "40px";
+    input.style.borderRadius = "10px";
+    input.style.border = "1px solid #94a3b8";
+    input.style.padding = "0 12px";
+    input.style.fontSize = "16px";
+    input.style.boxSizing = "border-box";
+
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.gap = "10px";
+    actions.style.marginTop = "14px";
+
+    const cancelButton = document.createElement("button");
+    cancelButton.textContent = "キャンセル";
+    cancelButton.style.flex = "1";
+    cancelButton.style.height = "40px";
+    cancelButton.style.borderRadius = "10px";
+    cancelButton.style.border = "1px solid #64748b";
+    cancelButton.style.background = "#334155";
+    cancelButton.style.color = "#f8fafc";
+    cancelButton.style.cursor = "pointer";
+
+    const saveButton = document.createElement("button");
+    saveButton.textContent = "保存";
+    saveButton.style.flex = "1";
+    saveButton.style.height = "40px";
+    saveButton.style.borderRadius = "10px";
+    saveButton.style.border = "1px solid #f59e0b";
+    saveButton.style.background = "#fbbf24";
+    saveButton.style.color = "#3f2a00";
+    saveButton.style.fontWeight = "700";
+    saveButton.style.cursor = "pointer";
+
+    const closeModal = (): void => {
+      modal.remove();
+      this.nicknameModalEl = undefined;
+    };
+    cancelButton.onclick = closeModal;
+    saveButton.onclick = () => {
+      onSave(input.value);
+      closeModal();
+    };
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        saveButton.click();
+      }
+    });
+
+    actions.append(cancelButton, saveButton);
+    panel.append(title, hint, input, actions);
+    modal.append(panel);
+    document.body.append(modal);
+    this.nicknameModalEl = modal;
+    window.setTimeout(() => input.focus(), 0);
   }
 
   private startLoopBgm(volume: number, muted: boolean): void {

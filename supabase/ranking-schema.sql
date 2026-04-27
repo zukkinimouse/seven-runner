@@ -114,17 +114,28 @@ declare
   v_week_key text;
   v_score integer;
   v_nickname text;
+  v_guest_id text;
+  v_store_id text;
 begin
-  if p_guest_id is null or p_guest_id !~ '^guest-[0-9]{6}$' then
+  v_guest_id := left(trim(coalesce(p_guest_id, '')), 64);
+  if char_length(v_guest_id) = 0 then
+    raise exception 'invalid guest id';
+  end if;
+  -- カジュアル運用向け: 端末ごとの既存ID互換を優先し、制御文字のみ拒否する
+  if v_guest_id ~ '[[:cntrl:]]' then
     raise exception 'invalid guest id';
   end if;
   if p_score_yen is null or p_score_yen < 0 or p_score_yen > 300000 then
     raise exception 'invalid score';
   end if;
+  v_store_id := left(trim(coalesce(p_store_id, '')), 64);
+  if char_length(v_store_id) = 0 then
+    v_store_id := 'store-default';
+  end if;
   v_score := p_score_yen;
-  v_nickname := left(trim(coalesce(p_nickname, '')), 20);
+  v_nickname := left(regexp_replace(trim(coalesce(p_nickname, '')), '[[:cntrl:]]', '', 'g'), 20);
   if char_length(v_nickname) = 0 then
-    v_nickname := 'ゲスト' || right(replace(p_guest_id, 'guest-', ''), 4);
+    v_nickname := 'ゲスト' || right(regexp_replace(v_guest_id, '[^0-9A-Za-z]', '', 'g'), 4);
   end if;
   v_week_key := to_char(v_now, 'IYYY') || '-W' || to_char(v_now, 'IW');
 
@@ -136,9 +147,9 @@ begin
     best_score_yen,
     best_run_at
   ) values (
-    coalesce(nullif(trim(p_store_id), ''), 'store-default'),
+    v_store_id,
     v_week_key,
-    p_guest_id,
+    v_guest_id,
     v_nickname,
     v_score,
     v_now
@@ -156,7 +167,7 @@ begin
     best_score_yen,
     achieved_at
   ) values (
-    p_guest_id,
+    v_guest_id,
     v_nickname,
     v_score,
     v_now

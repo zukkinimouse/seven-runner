@@ -48,7 +48,8 @@ function getCurrentWeekKey(now = new Date()): string {
 
 function sanitizeNickname(value: unknown, fallbackGuestId: string): string {
   if (typeof value !== "string") return createDefaultNickname(fallbackGuestId);
-  const trimmed = value.trim().slice(0, 20);
+  const normalized = value.replace(/[\n\r\t]/g, "");
+  const trimmed = normalized.trim().slice(0, 20);
   return trimmed.length > 0 ? trimmed : createDefaultNickname(fallbackGuestId);
 }
 
@@ -167,6 +168,17 @@ export function writeAudioSettings(args: {
     bgmVolume: Math.max(0, Math.min(1, args.bgmVolume)),
     seVolume: Math.max(0, Math.min(1, args.seVolume)),
     muted: args.muted,
+  };
+  writeSave(next);
+  return next;
+}
+
+export function writeNickname(rawNickname: string): SaveDataV1 {
+  const prev = loadSave();
+  const next: SaveDataV1 = {
+    ...prev,
+    nickname: sanitizeNickname(rawNickname, prev.guestId),
+    nicknamePrompted: true,
   };
   writeSave(next);
   return next;
