@@ -1005,7 +1005,7 @@ export class TitleScene extends Phaser.Scene {
         .setOrigin(0.5, 0.5)
         .setDepth(203);
       const pinButton = this.add
-        .rectangle(centerX, settingsBottomY, 180, 32, 0x60a5fa, 0.96)
+        .rectangle(centerX, settingsBottomY, 204, 38, 0x60a5fa, 0.96)
         .setStrokeStyle(2, 0x2563eb, 0.95)
         .setDepth(202)
         .setInteractive({ useHandCursor: true });
@@ -1018,7 +1018,7 @@ export class TitleScene extends Phaser.Scene {
         })
         .setOrigin(0.5, 0.5)
         .setDepth(203);
-      pinButton.on("pointerdown", () => {
+      pinButton.on("pointerup", () => {
         void this.openPinSettingsModal(current.guestId);
       });
       controls.push(note, idText, pinButton, pinButtonText);
@@ -1053,7 +1053,10 @@ export class TitleScene extends Phaser.Scene {
     this.infoModalLayer = this.add
       .container(0, 0, [backdrop, panel, title, ...controls, closeText])
       .setDepth(200);
-    backdrop.on("pointerdown", () => this.closeInfoModal());
+    // 設定モーダルは誤タップで閉じやすいため、背景タップでの即閉じを無効化
+    if (payload.title !== "設定") {
+      backdrop.on("pointerdown", () => this.closeInfoModal());
+    }
     this.input.keyboard?.once("keydown-ESC", () => this.closeInfoModal());
   }
 
@@ -1570,7 +1573,8 @@ export class TitleScene extends Phaser.Scene {
           currentPin: currentPinInput.value || undefined,
         });
         this.showDomToast("PINを保存しました");
-        close();
+        // 成功表示を確実に視認できるよう、少しだけ遅らせて閉じる
+        window.setTimeout(() => close(), 420);
       } catch {
         error.textContent = "保存失敗。現在PINまたは通信を確認してください";
       }
