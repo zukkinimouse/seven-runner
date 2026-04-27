@@ -53,6 +53,14 @@ function sanitizeNickname(value: unknown, fallbackGuestId: string): string {
   return trimmed.length > 0 ? trimmed : createDefaultNickname(fallbackGuestId);
 }
 
+function sanitizeGuestId(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim().slice(0, 64);
+  if (!trimmed) return null;
+  if (/[\n\r\t]/.test(trimmed)) return null;
+  return trimmed;
+}
+
 function normalizeWeeklyRanking(
   raw: unknown,
   storeId: string,
@@ -125,6 +133,7 @@ export function loadSave(): SaveDataV1 {
       guestId,
       nickname,
       nicknamePrompted: obj.nicknamePrompted === true,
+      recoveryNoticeAcknowledged: obj.recoveryNoticeAcknowledged === true,
       storeId,
       weeklyWeekKey: currentWeekKey,
       weeklyStoreRanking: activeWeeklyRanking,
@@ -179,6 +188,39 @@ export function writeNickname(rawNickname: string): SaveDataV1 {
     ...prev,
     nickname: sanitizeNickname(rawNickname, prev.guestId),
     nicknamePrompted: true,
+  };
+  writeSave(next);
+  return next;
+}
+
+export function acknowledgeRecoveryNotice(): SaveDataV1 {
+  const prev = loadSave();
+  if (prev.recoveryNoticeAcknowledged) return prev;
+  const next: SaveDataV1 = {
+    ...prev,
+    recoveryNoticeAcknowledged: true,
+  };
+  writeSave(next);
+  return next;
+}
+
+export function restoreGuestIdentity(args: {
+  guestId: string;
+  nickname?: string;
+}): SaveDataV1 | null {
+  const nextGuestId = sanitizeGuestId(args.guestId);
+  if (!nextGuestId) return null;
+  const prev = loadSave();
+  const nickname =
+    typeof args.nickname === "string" && args.nickname.trim().length > 0
+      ? sanitizeNickname(args.nickname, nextGuestId)
+      : createDefaultNickname(nextGuestId);
+  const next: SaveDataV1 = {
+    ...prev,
+    guestId: nextGuestId,
+    nickname,
+    nicknamePrompted: true,
+    recoveryNoticeAcknowledged: true,
   };
   writeSave(next);
   return next;

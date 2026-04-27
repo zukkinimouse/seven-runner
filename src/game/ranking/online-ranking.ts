@@ -15,11 +15,21 @@ type WeeklyStoreRankingRow = {
   best_run_at: string;
 };
 
+type VerifyRecoveryPinRow = {
+  is_valid: boolean;
+  nickname: string | null;
+};
+
 export type WeeklyStoreRankingRecord = {
   guestId: string;
   nickname: string;
   scoreYen: number;
   bestRunAt: string;
+};
+
+export type VerifyRecoveryPinResult = {
+  isValid: boolean;
+  nickname: string | null;
 };
 
 let cachedClient: SupabaseClient | null | undefined;
@@ -114,4 +124,41 @@ export async function fetchWeeklyStoreRankingFromSupabase(args: {
     scoreYen: row.best_score_yen,
     bestRunAt: row.best_run_at,
   }));
+}
+
+export async function setRecoveryPinOnSupabase(args: {
+  guestId: string;
+  newPin: string;
+  currentPin?: string;
+}): Promise<void> {
+  const supabase = getSupabaseClient();
+  if (!supabase) throw new Error("ranking disabled");
+  const { data, error } = await supabase.rpc("set_recovery_pin", {
+    p_guest_id: args.guestId,
+    p_new_pin: args.newPin,
+    p_current_pin: args.currentPin ?? null,
+  });
+  if (error) throw error;
+  if (data !== true) throw new Error("failed to set recovery pin");
+}
+
+export async function verifyRecoveryPinOnSupabase(args: {
+  guestId: string;
+  pin: string;
+}): Promise<VerifyRecoveryPinResult> {
+  const supabase = getSupabaseClient();
+  if (!supabase) throw new Error("ranking disabled");
+  const { data, error } = await supabase.rpc("verify_recovery_pin", {
+    p_guest_id: args.guestId,
+    p_pin: args.pin,
+  });
+  if (error) throw error;
+  if (!Array.isArray(data) || data.length === 0) {
+    return { isValid: false, nickname: null };
+  }
+  const row = data[0] as VerifyRecoveryPinRow;
+  return {
+    isValid: row.is_valid === true,
+    nickname: row.nickname ?? null,
+  };
 }

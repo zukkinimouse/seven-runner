@@ -92,6 +92,31 @@ drop policy if exists all_time_best_scores_update_all on public.all_time_best_sc
 revoke insert, update, delete on public.weekly_store_rankings from anon, authenticated;
 revoke insert, update, delete on public.all_time_best_scores from anon, authenticated;
 
+-- 復元用PIN（平文は保存しない）
+create extension if not exists pgcrypto;
+
+create table if not exists public.guest_recovery_credentials (
+  guest_id text primary key,
+  pin_hash text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+drop trigger if exists trg_guest_recovery_credentials_touch on public.guest_recovery_credentials;
+create trigger trg_guest_recovery_credentials_touch
+before update on public.guest_recovery_credentials
+for each row execute function public.touch_updated_at();
+
+alter table public.guest_recovery_credentials enable row level security;
+drop policy if exists guest_recovery_credentials_select_none on public.guest_recovery_credentials;
+create policy guest_recovery_credentials_select_none
+on public.guest_recovery_credentials
+for select
+to anon, authenticated
+using (false);
+
+revoke all on public.guest_recovery_credentials from anon, authenticated;
+
 -- スコア送信を一箇所に集約。自己ベスト更新のみ受理し、同点は先達者優先。
 create or replace function public.submit_score(
   p_store_id text,
@@ -204,3 +229,113 @@ end;
 $$;
 
 grant execute on function public.submit_score(text, text, text, integer) to anon, authenticated;
+
+create or replace function public.set_recovery_pin(
+  p_guest_id text,
+  p_new_pin text,
+  p_current_pin text default null
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_guest_id text;
+  v_new_pin text;
+  v_current_pin text;
+  v_existing_hash text;
+  v_next_hash text;
+begin
+  v_guest_id := left(trim(coalesce(p_guest_id, '')), 64);
+  if char_length(v_guest_id) = 0 or v_guest_id ~ '[[:cntrl:]]' then
+    raise exception 'invalid guest id';
+  end if;
+  v_new_pin := trim(coalesce(p_new_pin, ''));
+  if v_new_pin !~ '^[0-9]{4,6}$' then
+    raise exception 'invalid pin';
+  end if;
+  v_current_pin := trim(coalesce(p_current_pin, ''));
+
+  select c.pin_hash into v_existing_hash
+  from public.guest_recovery_credentials c
+  where c.guest_id = v_guest_id;
+
+  if v_existing_hash is not null then
+    if v_current_pin !~ '^[0-9]{4,6}$' then
+      raise exception 'current pin required';
+    end if;
+    if v_existing_hash <> encode(digest(v_current_pin, 'sha256'), 'hex') then
+      raise exception 'current pin mismatch';
+    end if;
+  end if;
+
+  v_next_hash := encode(digest(v_new_pin, 'sha256'), 'hex');
+  insert into public.guest_recovery_credentials (guest_id, pin_hash)
+  values (v_guest_id, v_next_hash)
+  on conflict on constraint guest_recovery_credentials_pkey
+  do update set
+    pin_hash = excluded.pin_hash,
+    updated_at = now();
+
+  return true;
+end;
+$$;
+
+grant execute on function public.set_recovery_pin(text, text, text) to anon, authenticated;
+
+create or replace function public.verify_recovery_pin(
+  p_guest_id text,
+  p_pin text
+)
+returns table (
+  is_valid boolean,
+  nickname text
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_guest_id text;
+  v_pin text;
+  v_hash text;
+begin
+  v_guest_id := left(trim(coalesce(p_guest_id, '')), 64);
+  v_pin := trim(coalesce(p_pin, ''));
+  if char_length(v_guest_id) = 0 or v_guest_id ~ '[[:cntrl:]]' then
+    return query select false, null::text;
+    return;
+  end if;
+  if v_pin !~ '^[0-9]{4,6}$' then
+    return query select false, null::text;
+    return;
+  end if;
+
+  select c.pin_hash into v_hash
+  from public.guest_recovery_credentials c
+  where c.guest_id = v_guest_id;
+
+  if v_hash is null then
+    return query select false, null::text;
+    return;
+  end if;
+
+  if v_hash <> encode(digest(v_pin, 'sha256'), 'hex') then
+    return query select false, null::text;
+    return;
+  end if;
+
+  return query
+  select
+    true,
+    (
+      select a.nickname
+      from public.all_time_best_scores a
+      where a.guest_id = v_guest_id
+      limit 1
+    );
+end;
+$$;
+
+grant execute on function public.verify_recovery_pin(text, text) to anon, authenticated;

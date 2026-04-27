@@ -1,6 +1,17 @@
 import Phaser from "phaser";
 import { setAudioMuted, setSeVolume, sfxPickup } from "../game/audio/sfx";
-import { loadSave, writeAudioSettings, writeNickname } from "../game/persistence/storage";
+import {
+  acknowledgeRecoveryNotice,
+  loadSave,
+  restoreGuestIdentity,
+  writeAudioSettings,
+  writeNickname,
+} from "../game/persistence/storage";
+import {
+  isSupabaseRankingEnabled,
+  setRecoveryPinOnSupabase,
+  verifyRecoveryPinOnSupabase,
+} from "../game/ranking/online-ranking";
 
 export class TitleScene extends Phaser.Scene {
   private static readonly GOLD = {
@@ -22,6 +33,9 @@ export class TitleScene extends Phaser.Scene {
   private canStart = true;
   private bgm?: Phaser.Sound.BaseSound;
   private nicknameModalEl?: HTMLDivElement;
+  private recoveryNoticeModalEl?: HTMLDivElement;
+  private restoreModalEl?: HTMLDivElement;
+  private pinSettingsModalEl?: HTMLDivElement;
 
   constructor() {
     super("TitleScene");
@@ -129,6 +143,28 @@ export class TitleScene extends Phaser.Scene {
         const updated = writeNickname(nextNickname);
         save.nickname = updated.nickname;
         nicknameText.setText(`名前: ${updated.nickname}`);
+      });
+    });
+    const restoreButton = this.add
+      .rectangle(scoreAreaX + 250, nicknameY + 10, 28, 28, 0x93c5fd, 0.95)
+      .setStrokeStyle(2, 0x2563eb, 0.95)
+      .setDepth(22)
+      .setInteractive({ useHandCursor: true });
+    restoreButton.setRounded?.(8);
+    this.add
+      .text(scoreAreaX + 250, nicknameY + 10, "↺", {
+        fontSize: "16px",
+        color: "#0f172a",
+        fontStyle: "bold",
+      })
+      .setOrigin(0.5)
+      .setDepth(23);
+    restoreButton.on("pointerdown", () => {
+      if (!this.canStart || this.isInfoModalOpen) return;
+      this.openRestoreModal(save.guestId, (nextSave) => {
+        save.guestId = nextSave.guestId;
+        save.nickname = nextSave.nickname;
+        nicknameText.setText(`名前: ${nextSave.nickname}`);
       });
     });
 
@@ -292,8 +328,31 @@ export class TitleScene extends Phaser.Scene {
     };
 
     this.input.keyboard?.once("keydown-SPACE", start);
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.stopLoopBgm());
-    this.events.once(Phaser.Scenes.Events.DESTROY, () => this.stopLoopBgm());
+    if (!save.recoveryNoticeAcknowledged) {
+      this.openRecoveryNoticeModal(save.nickname, save.guestId);
+    }
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.stopLoopBgm();
+      this.nicknameModalEl?.remove();
+      this.nicknameModalEl = undefined;
+      this.recoveryNoticeModalEl?.remove();
+      this.recoveryNoticeModalEl = undefined;
+      this.restoreModalEl?.remove();
+      this.restoreModalEl = undefined;
+      this.pinSettingsModalEl?.remove();
+      this.pinSettingsModalEl = undefined;
+    });
+    this.events.once(Phaser.Scenes.Events.DESTROY, () => {
+      this.stopLoopBgm();
+      this.nicknameModalEl?.remove();
+      this.nicknameModalEl = undefined;
+      this.recoveryNoticeModalEl?.remove();
+      this.recoveryNoticeModalEl = undefined;
+      this.restoreModalEl?.remove();
+      this.restoreModalEl = undefined;
+      this.pinSettingsModalEl?.remove();
+      this.pinSettingsModalEl = undefined;
+    });
   }
 
   private createRoundButton(args: {
@@ -921,6 +980,48 @@ export class TitleScene extends Phaser.Scene {
       controls.push(muteButton, muteText);
       applySettings();
       muteText.setText(`ミュート: ${muted ? "ON" : "OFF"}`);
+
+      const settingsBottomY = centerY + modalH / 2 - 58;
+      const note = this.add
+        .text(centerX, settingsBottomY - 52, "※データ復元不可。IDをスクショ保存してください。", {
+          fontSize: "13px",
+          color: "#fca5a5",
+          align: "center",
+          fontStyle: "bold",
+          stroke: "#111827",
+          strokeThickness: 4,
+        })
+        .setOrigin(0.5, 0.5)
+        .setDepth(203);
+      const idText = this.add
+        .text(centerX, settingsBottomY - 28, `ID: ${current.guestId}`, {
+          fontSize: "13px",
+          color: "#bfdbfe",
+          align: "center",
+          fontStyle: "bold",
+          stroke: "#111827",
+          strokeThickness: 4,
+        })
+        .setOrigin(0.5, 0.5)
+        .setDepth(203);
+      const pinButton = this.add
+        .rectangle(centerX, settingsBottomY, 180, 32, 0x60a5fa, 0.96)
+        .setStrokeStyle(2, 0x2563eb, 0.95)
+        .setDepth(202)
+        .setInteractive({ useHandCursor: true });
+      pinButton.setRounded?.(10);
+      const pinButtonText = this.add
+        .text(centerX, settingsBottomY, "PIN設定 / 変更", {
+          fontSize: "14px",
+          color: "#0f172a",
+          fontStyle: "bold",
+        })
+        .setOrigin(0.5, 0.5)
+        .setDepth(203);
+      pinButton.on("pointerdown", () => {
+        void this.openPinSettingsModal(current.guestId);
+      });
+      controls.push(note, idText, pinButton, pinButtonText);
     } else {
       const body = this.add
         .text(centerX, centerY - 10, payload.lines.join("\n"), {
@@ -964,6 +1065,18 @@ export class TitleScene extends Phaser.Scene {
     if (this.nicknameModalEl) {
       this.nicknameModalEl.remove();
       this.nicknameModalEl = undefined;
+    }
+    if (this.recoveryNoticeModalEl) {
+      this.recoveryNoticeModalEl.remove();
+      this.recoveryNoticeModalEl = undefined;
+    }
+    if (this.restoreModalEl) {
+      this.restoreModalEl.remove();
+      this.restoreModalEl = undefined;
+    }
+    if (this.pinSettingsModalEl) {
+      this.pinSettingsModalEl.remove();
+      this.pinSettingsModalEl = undefined;
     }
   }
 
@@ -1067,6 +1180,416 @@ export class TitleScene extends Phaser.Scene {
     document.body.append(modal);
     this.nicknameModalEl = modal;
     window.setTimeout(() => input.focus(), 0);
+  }
+
+  private openRecoveryNoticeModal(nickname: string, guestId: string): void {
+    if (typeof document === "undefined") return;
+    if (this.recoveryNoticeModalEl) {
+      this.recoveryNoticeModalEl.remove();
+      this.recoveryNoticeModalEl = undefined;
+    }
+    const modal = document.createElement("div");
+    modal.style.position = "fixed";
+    modal.style.inset = "0";
+    modal.style.background = "rgba(2,6,23,0.78)";
+    modal.style.display = "flex";
+    modal.style.alignItems = "center";
+    modal.style.justifyContent = "center";
+    modal.style.zIndex = "10001";
+
+    const panel = document.createElement("div");
+    panel.style.width = "min(92vw, 460px)";
+    panel.style.background = "#111827";
+    panel.style.border = "2px solid #fbbf24";
+    panel.style.borderRadius = "14px";
+    panel.style.padding = "16px";
+    panel.style.boxSizing = "border-box";
+    panel.style.color = "#f8fafc";
+    panel.style.fontFamily = "sans-serif";
+
+    const title = document.createElement("div");
+    title.textContent = "データ保存のご案内";
+    title.style.fontWeight = "700";
+    title.style.fontSize = "20px";
+    title.style.marginBottom = "10px";
+
+    const body = document.createElement("div");
+    body.textContent =
+      "このゲームデータは端末に保存されます。機種変更・アプリ削除時は復元できません。ニックネームとIDをスクリーンショットで保存してください。";
+    body.style.fontSize = "14px";
+    body.style.lineHeight = "1.6";
+    body.style.marginBottom = "10px";
+
+    const nameRow = document.createElement("div");
+    nameRow.textContent = `ニックネーム: ${nickname}`;
+    nameRow.style.fontSize = "13px";
+    nameRow.style.marginBottom = "4px";
+    nameRow.style.color = "#e2e8f0";
+
+    const idRow = document.createElement("div");
+    idRow.textContent = `ID: ${guestId}`;
+    idRow.style.fontSize = "13px";
+    idRow.style.marginBottom = "12px";
+    idRow.style.color = "#bfdbfe";
+
+    const okButton = document.createElement("button");
+    okButton.textContent = "確認しました";
+    okButton.style.width = "100%";
+    okButton.style.height = "40px";
+    okButton.style.borderRadius = "10px";
+    okButton.style.border = "1px solid #f59e0b";
+    okButton.style.background = "#fbbf24";
+    okButton.style.color = "#3f2a00";
+    okButton.style.fontWeight = "700";
+    okButton.style.cursor = "pointer";
+    okButton.onclick = () => {
+      acknowledgeRecoveryNotice();
+      modal.remove();
+      this.recoveryNoticeModalEl = undefined;
+    };
+
+    panel.append(title, body, nameRow, idRow, okButton);
+    modal.append(panel);
+    document.body.append(modal);
+    this.recoveryNoticeModalEl = modal;
+  }
+
+  private showDomToast(message: string): void {
+    if (typeof document === "undefined") return;
+    const toast = document.createElement("div");
+    toast.textContent = message;
+    toast.style.position = "fixed";
+    toast.style.left = "50%";
+    toast.style.bottom = "28px";
+    toast.style.transform = "translateX(-50%)";
+    toast.style.background = "rgba(15,23,42,0.94)";
+    toast.style.color = "#f8fafc";
+    toast.style.border = "1px solid #fbbf24";
+    toast.style.borderRadius = "10px";
+    toast.style.padding = "10px 14px";
+    toast.style.fontSize = "14px";
+    toast.style.fontWeight = "700";
+    toast.style.zIndex = "10010";
+    toast.style.opacity = "0";
+    toast.style.transition = "opacity 180ms ease";
+    document.body.append(toast);
+    window.setTimeout(() => {
+      toast.style.opacity = "1";
+    }, 0);
+    window.setTimeout(() => {
+      toast.style.opacity = "0";
+      window.setTimeout(() => toast.remove(), 220);
+    }, 1700);
+  }
+
+  private openRestoreModal(
+    currentGuestId: string,
+    onRestore: (nextSave: { guestId: string; nickname: string }) => void,
+  ): void {
+    if (typeof document === "undefined") return;
+    this.restoreModalEl?.remove();
+    this.restoreModalEl = undefined;
+
+    const modal = document.createElement("div");
+    modal.style.position = "fixed";
+    modal.style.inset = "0";
+    modal.style.background = "rgba(2,6,23,0.78)";
+    modal.style.display = "flex";
+    modal.style.alignItems = "center";
+    modal.style.justifyContent = "center";
+    modal.style.zIndex = "10002";
+
+    const panel = document.createElement("div");
+    panel.style.width = "min(92vw, 460px)";
+    panel.style.background = "#111827";
+    panel.style.border = "2px solid #60a5fa";
+    panel.style.borderRadius = "14px";
+    panel.style.padding = "16px";
+    panel.style.boxSizing = "border-box";
+    panel.style.color = "#f8fafc";
+    panel.style.fontFamily = "sans-serif";
+
+    const title = document.createElement("div");
+    title.textContent = "復元（ID入力）";
+    title.style.fontWeight = "700";
+    title.style.fontSize = "20px";
+    title.style.marginBottom = "8px";
+
+    const hint = document.createElement("div");
+    hint.textContent = "保存済みのIDとPINを入力すると、そのIDでランキング同期します。";
+    hint.style.fontSize = "13px";
+    hint.style.lineHeight = "1.5";
+    hint.style.marginBottom = "10px";
+    hint.style.opacity = "0.9";
+
+    const idInput = document.createElement("input");
+    idInput.type = "text";
+    idInput.maxLength = 64;
+    idInput.value = currentGuestId;
+    idInput.placeholder = "guest-123456";
+    idInput.style.width = "100%";
+    idInput.style.height = "40px";
+    idInput.style.borderRadius = "10px";
+    idInput.style.border = "1px solid #94a3b8";
+    idInput.style.padding = "0 12px";
+    idInput.style.fontSize = "15px";
+    idInput.style.boxSizing = "border-box";
+    idInput.style.marginBottom = "10px";
+
+    const nicknameInput = document.createElement("input");
+    nicknameInput.type = "text";
+    nicknameInput.maxLength = 20;
+    nicknameInput.placeholder = "ニックネーム（任意）";
+    nicknameInput.style.width = "100%";
+    nicknameInput.style.height = "40px";
+    nicknameInput.style.borderRadius = "10px";
+    nicknameInput.style.border = "1px solid #94a3b8";
+    nicknameInput.style.padding = "0 12px";
+    nicknameInput.style.fontSize = "15px";
+    nicknameInput.style.boxSizing = "border-box";
+    nicknameInput.style.marginBottom = "10px";
+
+    const pinInput = document.createElement("input");
+    pinInput.type = "password";
+    pinInput.maxLength = 6;
+    pinInput.placeholder = "PIN（4〜6桁）";
+    pinInput.style.width = "100%";
+    pinInput.style.height = "40px";
+    pinInput.style.borderRadius = "10px";
+    pinInput.style.border = "1px solid #94a3b8";
+    pinInput.style.padding = "0 12px";
+    pinInput.style.fontSize = "15px";
+    pinInput.style.boxSizing = "border-box";
+
+    const error = document.createElement("div");
+    error.style.fontSize = "12px";
+    error.style.color = "#fca5a5";
+    error.style.minHeight = "18px";
+    error.style.marginTop = "8px";
+
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.gap = "10px";
+    actions.style.marginTop = "10px";
+
+    const cancelButton = document.createElement("button");
+    cancelButton.textContent = "キャンセル";
+    cancelButton.style.flex = "1";
+    cancelButton.style.height = "40px";
+    cancelButton.style.borderRadius = "10px";
+    cancelButton.style.border = "1px solid #64748b";
+    cancelButton.style.background = "#334155";
+    cancelButton.style.color = "#f8fafc";
+    cancelButton.style.cursor = "pointer";
+
+    const restoreButton = document.createElement("button");
+    restoreButton.textContent = "復元する";
+    restoreButton.style.flex = "1";
+    restoreButton.style.height = "40px";
+    restoreButton.style.borderRadius = "10px";
+    restoreButton.style.border = "1px solid #2563eb";
+    restoreButton.style.background = "#60a5fa";
+    restoreButton.style.color = "#0f172a";
+    restoreButton.style.fontWeight = "700";
+    restoreButton.style.cursor = "pointer";
+
+    const close = (): void => {
+      modal.remove();
+      this.restoreModalEl = undefined;
+    };
+    cancelButton.onclick = close;
+    restoreButton.onclick = async () => {
+      error.textContent = "";
+      if (!isSupabaseRankingEnabled()) {
+        error.textContent = "オンライン設定未有効のため復元できません";
+        return;
+      }
+      try {
+        const verify = await verifyRecoveryPinOnSupabase({
+          guestId: idInput.value,
+          pin: pinInput.value,
+        });
+        if (!verify.isValid) {
+          error.textContent = "IDまたはPINが一致しません";
+          return;
+        }
+        const restored = restoreGuestIdentity({
+          guestId: idInput.value,
+          nickname: nicknameInput.value || verify.nickname || undefined,
+        });
+        if (!restored) {
+          error.textContent = "ID形式が不正です（1〜64文字・改行不可）";
+          return;
+        }
+        onRestore({ guestId: restored.guestId, nickname: restored.nickname });
+        this.showDomToast("復元しました");
+        close();
+      } catch {
+        error.textContent = "復元に失敗しました（通信を確認）";
+      }
+    };
+
+    actions.append(cancelButton, restoreButton);
+    panel.append(title, hint, idInput, nicknameInput, pinInput, error, actions);
+    modal.append(panel);
+    document.body.append(modal);
+    this.restoreModalEl = modal;
+    window.setTimeout(() => idInput.focus(), 0);
+  }
+
+  private async openPinSettingsModal(guestId: string): Promise<void> {
+    if (typeof document === "undefined") return;
+    this.pinSettingsModalEl?.remove();
+    this.pinSettingsModalEl = undefined;
+
+    const modal = document.createElement("div");
+    modal.style.position = "fixed";
+    modal.style.inset = "0";
+    modal.style.background = "rgba(2,6,23,0.78)";
+    modal.style.display = "flex";
+    modal.style.alignItems = "center";
+    modal.style.justifyContent = "center";
+    modal.style.zIndex = "10003";
+
+    const panel = document.createElement("div");
+    panel.style.width = "min(92vw, 460px)";
+    panel.style.background = "#111827";
+    panel.style.border = "2px solid #60a5fa";
+    panel.style.borderRadius = "14px";
+    panel.style.padding = "16px";
+    panel.style.boxSizing = "border-box";
+    panel.style.color = "#f8fafc";
+    panel.style.fontFamily = "sans-serif";
+
+    const title = document.createElement("div");
+    title.textContent = "簡易PIN設定";
+    title.style.fontWeight = "700";
+    title.style.fontSize = "20px";
+    title.style.marginBottom = "8px";
+
+    const hint = document.createElement("div");
+    hint.textContent = "PINは復元時に使います。変更時は現在PINを入力してください。";
+    hint.style.fontSize = "13px";
+    hint.style.lineHeight = "1.5";
+    hint.style.marginBottom = "10px";
+    hint.style.opacity = "0.9";
+
+    const currentPinInput = document.createElement("input");
+    currentPinInput.type = "password";
+    currentPinInput.maxLength = 6;
+    currentPinInput.placeholder = "現在PIN（初回は空欄）";
+    currentPinInput.style.width = "100%";
+    currentPinInput.style.height = "40px";
+    currentPinInput.style.borderRadius = "10px";
+    currentPinInput.style.border = "1px solid #94a3b8";
+    currentPinInput.style.padding = "0 12px";
+    currentPinInput.style.fontSize = "15px";
+    currentPinInput.style.boxSizing = "border-box";
+    currentPinInput.style.marginBottom = "10px";
+
+    const newPinInput = document.createElement("input");
+    newPinInput.type = "password";
+    newPinInput.maxLength = 6;
+    newPinInput.placeholder = "新しいPIN（4〜6桁）";
+    newPinInput.style.width = "100%";
+    newPinInput.style.height = "40px";
+    newPinInput.style.borderRadius = "10px";
+    newPinInput.style.border = "1px solid #94a3b8";
+    newPinInput.style.padding = "0 12px";
+    newPinInput.style.fontSize = "15px";
+    newPinInput.style.boxSizing = "border-box";
+    newPinInput.style.marginBottom = "10px";
+
+    const confirmPinInput = document.createElement("input");
+    confirmPinInput.type = "password";
+    confirmPinInput.maxLength = 6;
+    confirmPinInput.placeholder = "新しいPIN（確認）";
+    confirmPinInput.style.width = "100%";
+    confirmPinInput.style.height = "40px";
+    confirmPinInput.style.borderRadius = "10px";
+    confirmPinInput.style.border = "1px solid #94a3b8";
+    confirmPinInput.style.padding = "0 12px";
+    confirmPinInput.style.fontSize = "15px";
+    confirmPinInput.style.boxSizing = "border-box";
+
+    const error = document.createElement("div");
+    error.style.fontSize = "12px";
+    error.style.color = "#fca5a5";
+    error.style.minHeight = "18px";
+    error.style.marginTop = "8px";
+
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.gap = "10px";
+    actions.style.marginTop = "10px";
+
+    const cancelButton = document.createElement("button");
+    cancelButton.textContent = "キャンセル";
+    cancelButton.style.flex = "1";
+    cancelButton.style.height = "40px";
+    cancelButton.style.borderRadius = "10px";
+    cancelButton.style.border = "1px solid #64748b";
+    cancelButton.style.background = "#334155";
+    cancelButton.style.color = "#f8fafc";
+    cancelButton.style.cursor = "pointer";
+
+    const saveButton = document.createElement("button");
+    saveButton.textContent = "保存";
+    saveButton.style.flex = "1";
+    saveButton.style.height = "40px";
+    saveButton.style.borderRadius = "10px";
+    saveButton.style.border = "1px solid #2563eb";
+    saveButton.style.background = "#60a5fa";
+    saveButton.style.color = "#0f172a";
+    saveButton.style.fontWeight = "700";
+    saveButton.style.cursor = "pointer";
+
+    const close = (): void => {
+      modal.remove();
+      this.pinSettingsModalEl = undefined;
+    };
+    cancelButton.onclick = close;
+    saveButton.onclick = async () => {
+      error.textContent = "";
+      if (!isSupabaseRankingEnabled()) {
+        error.textContent = "オンライン設定未有効のためPIN保存できません";
+        return;
+      }
+      if (!/^\d{4,6}$/.test(newPinInput.value)) {
+        error.textContent = "PINは4〜6桁の数字で入力してください";
+        return;
+      }
+      if (newPinInput.value !== confirmPinInput.value) {
+        error.textContent = "確認PINが一致しません";
+        return;
+      }
+      try {
+        await setRecoveryPinOnSupabase({
+          guestId,
+          newPin: newPinInput.value,
+          currentPin: currentPinInput.value || undefined,
+        });
+        this.showDomToast("PINを保存しました");
+        close();
+      } catch {
+        error.textContent = "保存失敗。現在PINまたは通信を確認してください";
+      }
+    };
+
+    actions.append(cancelButton, saveButton);
+    panel.append(
+      title,
+      hint,
+      currentPinInput,
+      newPinInput,
+      confirmPinInput,
+      error,
+      actions,
+    );
+    modal.append(panel);
+    document.body.append(modal);
+    this.pinSettingsModalEl = modal;
+    window.setTimeout(() => newPinInput.focus(), 0);
   }
 
   private startLoopBgm(volume: number, muted: boolean): void {
