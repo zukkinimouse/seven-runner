@@ -265,12 +265,12 @@ begin
     if v_current_pin !~ '^[0-9]{4,6}$' then
       raise exception 'current pin required';
     end if;
-    if v_existing_hash <> encode(digest(v_current_pin, 'sha256'), 'hex') then
+    if v_existing_hash <> encode(extensions.digest(v_current_pin, 'sha256'), 'hex') then
       raise exception 'current pin mismatch';
     end if;
   end if;
 
-  v_next_hash := encode(digest(v_new_pin, 'sha256'), 'hex');
+  v_next_hash := encode(extensions.digest(v_new_pin, 'sha256'), 'hex');
   insert into public.guest_recovery_credentials (guest_id, pin_hash)
   values (v_guest_id, v_next_hash)
   on conflict on constraint guest_recovery_credentials_pkey
@@ -321,7 +321,7 @@ begin
     return;
   end if;
 
-  if v_hash <> encode(digest(v_pin, 'sha256'), 'hex') then
+  if v_hash <> encode(extensions.digest(v_pin, 'sha256'), 'hex') then
     return query select false, null::text;
     return;
   end if;
