@@ -6,6 +6,7 @@ import { TitleScene } from "./scenes/title-scene";
 import { GameScene } from "./scenes/game-scene";
 import { ResultScene } from "./scenes/result-scene";
 import { RankingScene } from "./scenes/ranking-scene";
+import { registerSW } from "virtual:pwa-register";
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -33,3 +34,18 @@ const refreshGameScale = (): void => {
 };
 window.addEventListener("resize", refreshGameScale);
 window.visualViewport?.addEventListener("resize", refreshGameScale);
+
+// PWA更新を即時反映寄りにするため、起動時と可視化復帰時に更新確認を走らせる
+const updateServiceWorker = registerSW({
+  immediate: true,
+  onRegisteredSW(_swUrl: string, registration: ServiceWorkerRegistration | undefined) {
+    if (!registration) return;
+    window.setInterval(() => {
+      void registration.update();
+    }, 60_000);
+  },
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  updateServiceWorker(true);
+});
