@@ -92,6 +92,46 @@ export class TitleScene extends Phaser.Scene {
       .setDepth(21)
       .setShadow(0, 2, "#000000", 0.72, true, true);
 
+    const nicknameY = scoreAreaY + (isCompact ? 46 : 56);
+    const nicknameBg = this.add
+      .rectangle(scoreAreaX + 108, nicknameY + 10, 216, 34, 0x111827, 0.78)
+      .setStrokeStyle(2, 0xfde68a, 0.74)
+      .setDepth(21);
+    nicknameBg.setRounded?.(10);
+    const nicknameText = this.add
+      .text(scoreAreaX + 10, nicknameY + 10, `名前: ${save.nickname}`, {
+        fontSize: `${isCompact ? 12 : 14}px`,
+        color: "#f8fafc",
+        fontStyle: "bold",
+        stroke: "#111827",
+        strokeThickness: 4,
+      })
+      .setOrigin(0, 0.5)
+      .setDepth(22)
+      .setShadow(0, 1, "#000000", 0.65, true, true);
+    const editNicknameButton = this.add
+      .rectangle(scoreAreaX + 216, nicknameY + 10, 28, 28, 0xfbbf24, 0.95)
+      .setStrokeStyle(2, 0xf59e0b, 0.95)
+      .setDepth(22)
+      .setInteractive({ useHandCursor: true });
+    editNicknameButton.setRounded?.(8);
+    this.add
+      .text(scoreAreaX + 216, nicknameY + 10, "✎", {
+        fontSize: "16px",
+        color: "#4a3500",
+        fontStyle: "bold",
+      })
+      .setOrigin(0.5)
+      .setDepth(23);
+    editNicknameButton.on("pointerdown", () => {
+      if (!this.canStart || this.isInfoModalOpen) return;
+      this.openNicknameEditModal(save.nickname, (nextNickname) => {
+        const updated = writeNickname(nextNickname);
+        save.nickname = updated.nickname;
+        nicknameText.setText(`名前: ${updated.nickname}`);
+      });
+    });
+
     const startImageButton = this.createImageButton({
       x: centerX,
       y: startY,
@@ -467,8 +507,15 @@ export class TitleScene extends Phaser.Scene {
     const height = this.scale.height;
     // 「遊び方」は説明量が多いため、通常モーダルより横幅と高さを少し広げる
     const isHowToModal = payload.title === "遊び方";
-    const modalW = Math.min(width * (isHowToModal ? 0.78 : 0.72), isHowToModal ? 500 : 460);
-    const modalH = Math.min(height * (isHowToModal ? 0.84 : 0.78), isHowToModal ? 330 : 290);
+    const isSettingsModal = payload.title === "設定";
+    const modalW = Math.min(
+      width * (isHowToModal || isSettingsModal ? 0.78 : 0.72),
+      isHowToModal ? 500 : isSettingsModal ? 500 : 460,
+    );
+    const modalH = Math.min(
+      height * (isHowToModal ? 0.84 : isSettingsModal ? 0.9 : 0.78),
+      isHowToModal ? 330 : isSettingsModal ? 390 : 290,
+    );
     const centerX = width / 2;
     const centerY = height / 2;
 
@@ -502,11 +549,13 @@ export class TitleScene extends Phaser.Scene {
             ? [
                 "⭐ ジャンプ：SPACE / ↑",
                 "⚡ 攻撃：X（クールタイムあり）",
+                "🎯 スキル発動：C（スペシャル保持中のみ）",
               ].join("\n")
             : [
                 "⭐ ジャンプ：JUMPボタン",
                 "👆 左画面半分タップでもジャンプ",
                 "⚡ ATTACKで攻撃（CTあり）",
+                "🎯 SKILLでスキル発動（保持中のみ）",
               ].join("\n"),
         },
         {
@@ -733,7 +782,6 @@ export class TitleScene extends Phaser.Scene {
       let bgmVolume = current.bgmVolume;
       let seVolume = current.seVolume;
       let muted = current.muted;
-      let nickname = current.nickname;
       let lastSePreviewAt = 0;
       const applySettings = (): void => {
         const next = writeAudioSettings({ bgmVolume, seVolume, muted });
@@ -873,58 +921,6 @@ export class TitleScene extends Phaser.Scene {
       controls.push(muteButton, muteText);
       applySettings();
       muteText.setText(`ミュート: ${muted ? "ON" : "OFF"}`);
-
-      const nicknameCardY = centerY + 94;
-      const nicknameCard = this.add
-        .rectangle(centerX, nicknameCardY, Math.min(300, modalW - 60), 58, 0x1f2937, 0.94)
-        .setStrokeStyle(2, 0xfde68a, 0.85)
-        .setDepth(202);
-      nicknameCard.setRounded?.(12);
-      const nicknameLabel = this.add
-        .text(centerX, nicknameCardY - 12, "ニックネーム", {
-          fontSize: "14px",
-          color: "#fef3c7",
-          fontStyle: "bold",
-        })
-        .setOrigin(0.5, 0.5)
-        .setDepth(203);
-      const nicknameValue = this.add
-        .text(centerX, nicknameCardY + 8, nickname, {
-          fontSize: "16px",
-          color: "#f8fafc",
-          fontStyle: "bold",
-        })
-        .setOrigin(0.5, 0.5)
-        .setDepth(203);
-
-      const nicknameButton = this.add
-        .rectangle(centerX, nicknameCardY + 46, 160, 34, 0xfbbf24, 0.96)
-        .setStrokeStyle(2, 0xf59e0b, 0.95)
-        .setDepth(202)
-        .setInteractive({ useHandCursor: true });
-      nicknameButton.setRounded?.(10);
-      const nicknameButtonText = this.add
-        .text(centerX, nicknameCardY + 46, "名前を変更", {
-          fontSize: "15px",
-          color: "#4a3500",
-          fontStyle: "bold",
-        })
-        .setOrigin(0.5)
-        .setDepth(203);
-
-      nicknameButton.on("pointerdown", () => {
-        this.openNicknameEditModal(nickname, (nextNickname) => {
-          nickname = writeNickname(nextNickname).nickname;
-          nicknameValue.setText(nickname);
-        });
-      });
-      controls.push(
-        nicknameCard,
-        nicknameLabel,
-        nicknameValue,
-        nicknameButton,
-        nicknameButtonText,
-      );
     } else {
       const body = this.add
         .text(centerX, centerY - 10, payload.lines.join("\n"), {

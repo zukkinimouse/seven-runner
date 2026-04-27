@@ -37,9 +37,18 @@ export class RankingScene extends Phaser.Scene {
         fontStyle: "bold",
       })
       .setOrigin(0.5, 0);
+    const periodText = this.buildWeeklyPeriodLabel();
+    this.add
+      .text(w / 2, 84, periodText, {
+        fontSize: isCompact ? "12px" : "14px",
+        color: "#93c5fd",
+        fontStyle: "bold",
+        align: "center",
+      })
+      .setOrigin(0.5, 0);
 
     const loading = this.add
-      .text(w / 2, h / 2, "読み込み中...", {
+      .text(w / 2, h / 2 + 8, "読み込み中...", {
         fontSize: isCompact ? "18px" : "22px",
         color: "#e2e8f0",
         fontStyle: "bold",
@@ -78,10 +87,11 @@ export class RankingScene extends Phaser.Scene {
     }
     loading.destroy();
 
-    const leftX = 56;
-    const topY = 104;
-    const rowH = isCompact ? 24 : 28;
-    const maxRows = isCompact ? 10 : 12;
+    const leftX = 44;
+    const rightX = this.scale.width - 44;
+    const topY = 118;
+    const rowH = isCompact ? 36 : 42;
+    const maxRows = isCompact ? 8 : 10;
     const shown = rows.slice(0, maxRows);
 
     if (shown.length === 0) {
@@ -100,27 +110,49 @@ export class RankingScene extends Phaser.Scene {
       const y = topY + i * rowH;
       const rank = i + 1;
       const medal = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : " ";
+      const rowBg = this.add
+        .rectangle(this.scale.width / 2, y + rowH / 2 - 2, this.scale.width - 56, rowH - 4, 0x1e293b, 0.82)
+        .setStrokeStyle(1, 0x334155, 0.9);
+      rowBg.setRounded?.(10);
       this.add
-        .text(leftX, y, `${medal} ${rank.toString().padStart(2, "0")}`, {
-          fontSize: isCompact ? "14px" : "16px",
+        .text(leftX + 8, y + 6, `${medal} ${rank.toString().padStart(2, "0")}`, {
+          fontSize: isCompact ? "16px" : "18px",
           color: "#fef08a",
           fontStyle: "bold",
         })
         .setOrigin(0, 0);
       this.add
-        .text(leftX + 84, y, row.nickname, {
-          fontSize: isCompact ? "14px" : "16px",
+        .text(leftX + 98, y + 6, row.nickname, {
+          fontSize: isCompact ? "16px" : "18px",
           color: "#f8fafc",
           fontStyle: "bold",
         })
         .setOrigin(0, 0);
       this.add
-        .text(this.scale.width - 48, y, `¥${row.scoreYen.toLocaleString("ja-JP")}`, {
-          fontSize: isCompact ? "14px" : "16px",
+        .text(rightX - 6, y + 6, `¥${row.scoreYen.toLocaleString("ja-JP")}`, {
+          fontSize: isCompact ? "16px" : "18px",
           color: "#86efac",
           fontStyle: "bold",
         })
         .setOrigin(1, 0);
     }
+  }
+
+  private buildWeeklyPeriodLabel(): string {
+    const now = new Date();
+    const day = now.getUTCDay() || 7;
+    const weekStartUtc = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+    weekStartUtc.setUTCDate(weekStartUtc.getUTCDate() - day + 1);
+    const weekEndUtc = new Date(weekStartUtc.getTime());
+    weekEndUtc.setUTCDate(weekEndUtc.getUTCDate() + 6);
+    const toJstDate = (date: Date): string =>
+      date.toLocaleDateString("ja-JP", {
+        timeZone: "Asia/Tokyo",
+        month: "2-digit",
+        day: "2-digit",
+      });
+    return `集計: ${toJstDate(weekStartUtc)}〜${toJstDate(weekEndUtc)} / リセット: 毎週月曜 09:00(JST)`;
   }
 }

@@ -154,12 +154,18 @@ begin
     v_score,
     v_now
   )
-  on conflict (store_id, week_key, guest_id)
+  on conflict on constraint weekly_store_rankings_pkey
   do update set
     nickname = excluded.nickname,
-    best_score_yen = excluded.best_score_yen,
-    best_run_at = excluded.best_run_at
-  where excluded.best_score_yen > public.weekly_store_rankings.best_score_yen;
+    best_score_yen = greatest(
+      public.weekly_store_rankings.best_score_yen,
+      excluded.best_score_yen
+    ),
+    best_run_at = case
+      when excluded.best_score_yen > public.weekly_store_rankings.best_score_yen
+      then excluded.best_run_at
+      else public.weekly_store_rankings.best_run_at
+    end;
 
   insert into public.all_time_best_scores (
     guest_id,
@@ -172,12 +178,18 @@ begin
     v_score,
     v_now
   )
-  on conflict (guest_id)
+  on conflict on constraint all_time_best_scores_pkey
   do update set
     nickname = excluded.nickname,
-    best_score_yen = excluded.best_score_yen,
-    achieved_at = excluded.achieved_at
-  where excluded.best_score_yen > public.all_time_best_scores.best_score_yen;
+    best_score_yen = greatest(
+      public.all_time_best_scores.best_score_yen,
+      excluded.best_score_yen
+    ),
+    achieved_at = case
+      when excluded.best_score_yen > public.all_time_best_scores.best_score_yen
+      then excluded.achieved_at
+      else public.all_time_best_scores.achieved_at
+    end;
 
   return query
   select
