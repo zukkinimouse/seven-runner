@@ -1048,10 +1048,28 @@ export class TitleScene extends Phaser.Scene {
       })
       .setOrigin(0.5, 1)
       .setDepth(202)
-      .setShadow(0, 2, "#000000", 0.75, true, true);
+      .setShadow(0, 2, "#000000", 0.75, true, true)
+      .setInteractive({ useHandCursor: true });
+    closeText.on("pointerdown", () => this.closeInfoModal());
+
+    const closeButton = this.add
+      .rectangle(centerX + modalW / 2 - 24, centerY - modalH / 2 + 24, 28, 28, 0x334155, 0.96)
+      .setStrokeStyle(2, 0xfde68a, 0.95)
+      .setDepth(202)
+      .setInteractive({ useHandCursor: true });
+    closeButton.setRounded?.(8);
+    const closeButtonText = this.add
+      .text(centerX + modalW / 2 - 24, centerY - modalH / 2 + 24, "×", {
+        fontSize: "18px",
+        color: "#fef3c7",
+        fontStyle: "bold",
+      })
+      .setOrigin(0.5, 0.5)
+      .setDepth(203);
+    closeButton.on("pointerdown", () => this.closeInfoModal());
 
     this.infoModalLayer = this.add
-      .container(0, 0, [backdrop, panel, title, ...controls, closeText])
+      .container(0, 0, [backdrop, panel, title, ...controls, closeText, closeButton, closeButtonText])
       .setDepth(200);
     // 設定モーダルは誤タップで閉じやすいため、背景タップでの即閉じを無効化
     if (payload.title !== "設定") {
