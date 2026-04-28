@@ -653,7 +653,25 @@ export class ResultScene extends Phaser.Scene {
 
   private getRankVisualTheme(rank: string): RankVisualTheme {
     const normalized = rank.toUpperCase();
-    if (normalized === "P" || normalized.includes("PLATINUM")) {
+    if (normalized.includes("GOD")) {
+      return {
+        primary: "#f9a8d4",
+        accent: "#fdf2f8",
+        shadow: 0x9d174d,
+        panel: 0x831843,
+        label: "GOD RANK",
+      };
+    }
+    if (normalized.includes("MASTER")) {
+      return {
+        primary: "#c4b5fd",
+        accent: "#ede9fe",
+        shadow: 0x5b21b6,
+        panel: 0x4c1d95,
+        label: "MASTER RANK",
+      };
+    }
+    if (normalized.includes("PLATINUM")) {
       return {
         primary: "#e9d5ff",
         accent: "#f5f3ff",
@@ -662,7 +680,7 @@ export class ResultScene extends Phaser.Scene {
         label: "PLATINUM RANK",
       };
     }
-    if (normalized === "A" || normalized.includes("GOLD")) {
+    if (normalized.includes("GOLD")) {
       return {
         primary: "#facc15",
         accent: "#fef08a",
@@ -671,7 +689,7 @@ export class ResultScene extends Phaser.Scene {
         label: "GOLD RANK",
       };
     }
-    if (normalized === "B" || normalized.includes("SILVER")) {
+    if (normalized.includes("SILVER")) {
       return {
         primary: "#d1d5db",
         accent: "#f3f4f6",
@@ -680,7 +698,7 @@ export class ResultScene extends Phaser.Scene {
         label: "SILVER RANK",
       };
     }
-    if (normalized === "C") {
+    if (normalized.includes("BRONZE")) {
       return {
         primary: "#f59e0b",
         accent: "#fcd34d",

@@ -8,14 +8,16 @@ export type RankRow = {
 
 /** 合計金額からランクを決める */
 export const RANK_TABLE: readonly RankRow[] = [
-  // 0〜4999円
-  { minYen: 0, rank: "D", label: "クーポンなし" },
-  // 5000〜8999円
-  { minYen: 5000, rank: "C", label: "30円引き" },
-  // 9000〜14999円
-  { minYen: 9000, rank: "B", label: "50円引き" },
-  // 15000〜19999円
-  { minYen: 15000, rank: "A", label: "100円引き" },
-  // 20000円以上
-  { minYen: 20000, rank: "P", label: "150円引き" },
+  // 0〜14,999円
+  { minYen: 0, rank: "BRONZE", label: "クーポンなし" },
+  // 15,000〜29,999円
+  { minYen: 15000, rank: "SILVER", label: "30円引き" },
+  // 30,000〜44,999円
+  { minYen: 30000, rank: "GOLD", label: "50円引き" },
+  // 45,000〜69,999円
+  { minYen: 45000, rank: "PLATINUM", label: "100円引き" },
+  // 70,000〜99,999円
+  { minYen: 70000, rank: "MASTER", label: "150円引き" },
+  // 100,000円以上
+  { minYen: 100000, rank: "GOD", label: "200円引き" },
 ] as const;

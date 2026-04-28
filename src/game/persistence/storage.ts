@@ -61,6 +61,22 @@ function sanitizeGuestId(value: unknown): string | null {
   return trimmed;
 }
 
+function normalizeCouponRank(value: unknown): CouponRank {
+  if (value === "BRONZE") return "BRONZE";
+  if (value === "SILVER") return "SILVER";
+  if (value === "GOLD") return "GOLD";
+  if (value === "PLATINUM") return "PLATINUM";
+  if (value === "MASTER") return "MASTER";
+  if (value === "GOD") return "GOD";
+  // 旧バージョンのランク値を移行
+  if (value === "D") return "BRONZE";
+  if (value === "C") return "SILVER";
+  if (value === "B") return "GOLD";
+  if (value === "A") return "PLATINUM";
+  if (value === "P") return "MASTER";
+  return "BRONZE";
+}
+
 function normalizeWeeklyRanking(
   raw: unknown,
   storeId: string,
@@ -115,7 +131,7 @@ export function loadSave(): SaveDataV1 {
       version: 1,
       highScore: typeof obj.highScore === "number" ? obj.highScore : 0,
       totalRuns: typeof obj.totalRuns === "number" ? obj.totalRuns : 0,
-      bestRank: (obj.bestRank as CouponRank) ?? "D",
+      bestRank: normalizeCouponRank(obj.bestRank),
       unlockedItems: Array.isArray(obj.unlockedItems)
         ? obj.unlockedItems.filter((x) => typeof x === "string")
         : [],

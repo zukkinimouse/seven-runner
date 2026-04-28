@@ -439,6 +439,7 @@ function createSpeechBubble(
       color: "#111827",
       align: "center",
       fontStyle: "bold",
+      padding: { top: 3, bottom: 1 },
     })
     .setOrigin(0.5, 0.5);
   // プレイヤー最前面を維持するため、吹き出しはプレイヤーより後ろに置く

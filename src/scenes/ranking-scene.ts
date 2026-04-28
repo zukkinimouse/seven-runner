@@ -1,6 +1,10 @@
 import Phaser from "phaser";
 import { loadSave } from "../game/persistence/storage";
-import { fetchWeeklyStoreRankingFromSupabase } from "../game/ranking/online-ranking";
+import {
+  fetchMyWeeklyRankFromSupabase,
+  fetchWeeklyRankDistributionFromSupabase,
+  fetchWeeklyStoreRankingFromSupabase,
+} from "../game/ranking/online-ranking";
 
 type RankingRow = {
   guestId: string;
@@ -28,6 +32,7 @@ export class RankingScene extends Phaser.Scene {
         fontStyle: "bold",
         stroke: "#7c2d12",
         strokeThickness: 6,
+        padding: { top: 4, bottom: 2 },
       })
       .setOrigin(0.5, 0);
     this.add
@@ -35,6 +40,7 @@ export class RankingScene extends Phaser.Scene {
         fontSize: isCompact ? "14px" : "16px",
         color: "#cbd5e1",
         fontStyle: "bold",
+        padding: { top: 2, bottom: 1 },
       })
       .setOrigin(0.5, 0);
     const periodText = this.buildWeeklyPeriodLabel();
@@ -44,6 +50,7 @@ export class RankingScene extends Phaser.Scene {
         color: "#93c5fd",
         fontStyle: "bold",
         align: "center",
+        padding: { top: 2, bottom: 1 },
       })
       .setOrigin(0.5, 0);
 
@@ -71,25 +78,84 @@ export class RankingScene extends Phaser.Scene {
       .setOrigin(0.5, 0.5);
     backButton.on("pointerdown", () => this.scene.start("TitleScene"));
 
-    void this.renderRanking(save.storeId, loading, isCompact);
+    void this.renderRanking(save.storeId, save.guestId, loading, isCompact);
   }
 
   private async renderRanking(
     storeId: string,
+    guestId: string,
     loading: Phaser.GameObjects.Text,
     isCompact: boolean,
   ): Promise<void> {
     let rows: RankingRow[] = [];
+    let myRank: { rank: number; total: number; scoreYen: number } | null = null;
+    let distributionText = "ランク帯分布: 読み込み中...";
     try {
-      rows = await fetchWeeklyStoreRankingFromSupabase({ storeId, limit: 20 });
+      const [fetchedRows, fetchedMyRank, fetchedDistribution] = await Promise.all([
+        fetchWeeklyStoreRankingFromSupabase({ storeId, limit: 10 }),
+        fetchMyWeeklyRankFromSupabase({ storeId, guestId }),
+        fetchWeeklyRankDistributionFromSupabase({ storeId }),
+      ]);
+      rows = fetchedRows;
+      if (fetchedMyRank) {
+        myRank = {
+          rank: fetchedMyRank.myRank,
+          total: fetchedMyRank.totalPlayers,
+          scoreYen: fetchedMyRank.myScoreYen,
+        };
+      }
+      if (fetchedDistribution && fetchedDistribution.totalPlayers > 0) {
+        const total = fetchedDistribution.totalPlayers;
+        const pct = (value: number): string => `${Math.round((value / total) * 100)}%`;
+        const updatedAt = new Date(fetchedDistribution.calculatedAt).toLocaleTimeString("ja-JP", {
+          hour: "2-digit",
+          minute: "2-digit",
+          timeZone: "Asia/Tokyo",
+        });
+        distributionText =
+          `ランク帯分布（プレイヤー総数 ${total}人 / 更新:${updatedAt}）\n` +
+          `ブロンズ:${pct(fetchedDistribution.bronzeCount)} / シルバー:${pct(fetchedDistribution.silverCount)} / ゴールド:${pct(fetchedDistribution.goldCount)} / ` +
+          `プラチナ:${pct(fetchedDistribution.platinumCount)} / マスター:${pct(fetchedDistribution.masterCount)} / ゴッド:${pct(fetchedDistribution.godCount)}`;
+      } else {
+        distributionText = "ランク帯分布: データ不足";
+      }
     } catch {
       rows = [];
+      myRank = null;
+      distributionText = "ランク帯分布: 取得失敗";
     }
     loading.destroy();
 
+    const myRankText = myRank
+      ? `あなたの順位: ${myRank.rank}位（全${myRank.total}人中）  ¥${myRank.scoreYen.toLocaleString("ja-JP")}`
+      : "あなたは現在ランク外です";
+    this.add
+      .text(this.scale.width / 2, 104, myRankText, {
+        fontSize: isCompact ? "12px" : "14px",
+        color: "#fef08a",
+        fontStyle: "bold",
+        align: "center",
+        stroke: "#111827",
+        strokeThickness: 4,
+        padding: { top: 2, bottom: 1 },
+      })
+      .setOrigin(0.5, 0);
+    this.add
+      .text(this.scale.width / 2, 122, distributionText, {
+        fontSize: isCompact ? "9px" : "11px",
+        color: "#bfdbfe",
+        fontStyle: "bold",
+        align: "center",
+        stroke: "#0f172a",
+        strokeThickness: 3,
+        padding: { top: 1, bottom: 1 },
+        lineSpacing: 3,
+      })
+      .setOrigin(0.5, 0);
+
     const leftX = 44;
     const rightX = this.scale.width - 44;
-    const topY = 118;
+    const topY = 168;
     const rowH = isCompact ? 36 : 42;
     const maxRows = isCompact ? 8 : 10;
     const shown = rows.slice(0, maxRows);
@@ -110,9 +176,17 @@ export class RankingScene extends Phaser.Scene {
       const y = topY + i * rowH;
       const rank = i + 1;
       const medal = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : " ";
+      const isMe = row.guestId === guestId;
       const rowBg = this.add
-        .rectangle(this.scale.width / 2, y + rowH / 2 - 2, this.scale.width - 56, rowH - 4, 0x1e293b, 0.82)
-        .setStrokeStyle(1, 0x334155, 0.9);
+        .rectangle(
+          this.scale.width / 2,
+          y + rowH / 2 - 2,
+          this.scale.width - 56,
+          rowH - 4,
+          isMe ? 0x14532d : 0x1e293b,
+          isMe ? 0.92 : 0.82,
+        )
+        .setStrokeStyle(1, isMe ? 0x86efac : 0x334155, 0.95);
       rowBg.setRounded?.(10);
       this.add
         .text(leftX + 8, y + 6, `${medal} ${rank.toString().padStart(2, "0")}`, {

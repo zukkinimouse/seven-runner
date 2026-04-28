@@ -44,7 +44,7 @@ export const DEFAULT_SAVE: SaveDataV1 = {
   version: SAVE_VERSION,
   highScore: 0,
   totalRuns: 0,
-  bestRank: "D",
+  bestRank: "BRONZE",
   unlockedItems: [],
   lastPlayedAt: "",
   bgmVolume: 0.35,

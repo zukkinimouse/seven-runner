@@ -4,7 +4,8 @@ export function scrollSpeedForElapsedSeconds(elapsedSec: number): number {
   if (elapsedSec < 45) return 220;
   if (elapsedSec < 80) return 255;
   if (elapsedSec < 130) return 295;
-  return 330;
+  if (elapsedSec < 180) return 330;
+  return 360;
 }
 
 /** 0〜1 の難易度係数（チャンク選出・敵出現率に使用） */

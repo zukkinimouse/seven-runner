@@ -339,3 +339,185 @@ end;
 $$;
 
 grant execute on function public.verify_recovery_pin(text, text) to anon, authenticated;
+
+create or replace function public.get_my_weekly_rank(
+  p_store_id text,
+  p_guest_id text
+)
+returns table (
+  my_rank integer,
+  total_players integer,
+  my_score_yen integer
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_store_id text;
+  v_guest_id text;
+  v_week_key text;
+begin
+  v_store_id := left(trim(coalesce(p_store_id, '')), 64);
+  v_guest_id := left(trim(coalesce(p_guest_id, '')), 64);
+  if char_length(v_store_id) = 0 or char_length(v_guest_id) = 0 then
+    return;
+  end if;
+
+  v_week_key := to_char((now() at time zone 'utc')::date + interval '3 day', 'IYYY-"W"IW');
+
+  return query
+  with ranked as (
+    select
+      w.guest_id,
+      w.best_score_yen,
+      row_number() over (
+        order by w.best_score_yen desc, w.best_run_at asc
+      )::integer as rnk,
+      count(*) over ()::integer as total_count
+    from public.weekly_store_rankings w
+    where w.store_id = v_store_id
+      and w.week_key = v_week_key
+  )
+  select
+    r.rnk,
+    r.total_count,
+    r.best_score_yen
+  from ranked r
+  where r.guest_id = v_guest_id
+  limit 1;
+end;
+$$;
+
+grant execute on function public.get_my_weekly_rank(text, text) to anon, authenticated;
+
+create table if not exists public.weekly_rank_distribution_cache (
+  store_id text not null,
+  week_key text not null,
+  bronze_count integer not null default 0,
+  silver_count integer not null default 0,
+  gold_count integer not null default 0,
+  platinum_count integer not null default 0,
+  master_count integer not null default 0,
+  god_count integer not null default 0,
+  total_players integer not null default 0,
+  calculated_at timestamptz not null default now(),
+  primary key (store_id, week_key)
+);
+
+alter table public.weekly_rank_distribution_cache enable row level security;
+drop policy if exists weekly_rank_distribution_cache_select_all on public.weekly_rank_distribution_cache;
+create policy weekly_rank_distribution_cache_select_all
+on public.weekly_rank_distribution_cache
+for select
+to anon, authenticated
+using (true);
+revoke insert, update, delete on public.weekly_rank_distribution_cache from anon, authenticated;
+
+create or replace function public.get_weekly_rank_distribution(
+  p_store_id text
+)
+returns table (
+  bronze_count integer,
+  silver_count integer,
+  gold_count integer,
+  platinum_count integer,
+  master_count integer,
+  god_count integer,
+  total_players integer,
+  calculated_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_store_id text;
+  v_week_key text;
+  v_now timestamptz := now();
+begin
+  v_store_id := left(trim(coalesce(p_store_id, '')), 64);
+  if char_length(v_store_id) = 0 then
+    return;
+  end if;
+  v_week_key := to_char((v_now at time zone 'utc')::date + interval '3 day', 'IYYY-"W"IW');
+
+  if exists (
+    select 1
+    from public.weekly_rank_distribution_cache c
+    where c.store_id = v_store_id
+      and c.week_key = v_week_key
+      and c.calculated_at >= v_now - interval '1 hour'
+  ) then
+    return query
+    select
+      c.bronze_count,
+      c.silver_count,
+      c.gold_count,
+      c.platinum_count,
+      c.master_count,
+      c.god_count,
+      c.total_players,
+      c.calculated_at
+    from public.weekly_rank_distribution_cache c
+    where c.store_id = v_store_id
+      and c.week_key = v_week_key
+    limit 1;
+    return;
+  end if;
+
+  insert into public.weekly_rank_distribution_cache (
+    store_id,
+    week_key,
+    bronze_count,
+    silver_count,
+    gold_count,
+    platinum_count,
+    master_count,
+    god_count,
+    total_players,
+    calculated_at
+  )
+  select
+    v_store_id,
+    v_week_key,
+    count(*) filter (where w.best_score_yen < 15000)::integer as bronze_count,
+    count(*) filter (where w.best_score_yen >= 15000 and w.best_score_yen < 30000)::integer as silver_count,
+    count(*) filter (where w.best_score_yen >= 30000 and w.best_score_yen < 45000)::integer as gold_count,
+    count(*) filter (where w.best_score_yen >= 45000 and w.best_score_yen < 70000)::integer as platinum_count,
+    count(*) filter (where w.best_score_yen >= 70000 and w.best_score_yen < 100000)::integer as master_count,
+    count(*) filter (where w.best_score_yen >= 100000)::integer as god_count,
+    count(*)::integer as total_players,
+    v_now
+  from public.weekly_store_rankings w
+  where w.store_id = v_store_id
+    and w.week_key = v_week_key
+  on conflict on constraint weekly_rank_distribution_cache_pkey
+  do update set
+    bronze_count = excluded.bronze_count,
+    silver_count = excluded.silver_count,
+    gold_count = excluded.gold_count,
+    platinum_count = excluded.platinum_count,
+    master_count = excluded.master_count,
+    god_count = excluded.god_count,
+    total_players = excluded.total_players,
+    calculated_at = excluded.calculated_at;
+
+  return query
+  select
+    c.bronze_count,
+    c.silver_count,
+    c.gold_count,
+    c.platinum_count,
+    c.master_count,
+    c.god_count,
+    c.total_players,
+    c.calculated_at
+  from public.weekly_rank_distribution_cache c
+  where c.store_id = v_store_id
+    and c.week_key = v_week_key
+  limit 1;
+end;
+$$;
+
+grant execute on function public.get_weekly_rank_distribution(text) to anon, authenticated;

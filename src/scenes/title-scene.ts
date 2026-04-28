@@ -573,7 +573,7 @@ export class TitleScene extends Phaser.Scene {
     );
     const modalH = Math.min(
       height * (isHowToModal ? 0.84 : isSettingsModal ? 0.9 : 0.78),
-      isHowToModal ? 330 : isSettingsModal ? 390 : 290,
+      isHowToModal ? 390 : isSettingsModal ? 390 : 290,
     );
     const centerX = width / 2;
     const centerY = height / 2;
@@ -638,8 +638,9 @@ export class TitleScene extends Phaser.Scene {
         {
           heading: "4/4 ランクと上達",
           body: [
-            "🔥 15,000円を超えると上級モードへ移行",
-            "⚡ 20,000円を超えるとさらに加速",
+            "⚡ スコア帯が上がるほどスクロール速度が段階上昇",
+            "💰 ランクアップでアイテム獲得金額が上昇",
+            "💥 ランクアップで撃破ボーナスも上昇",
           ].join("\n"),
         },
       ] as const;
@@ -673,48 +674,62 @@ export class TitleScene extends Phaser.Scene {
         .setOrigin(0.5, 0.5)
         .setDepth(202)
         .setShadow(0, 2, "#000000", 0.72, true, true);
-      // ランクページは2x2カードにして、視線移動を短くして読みやすくする
+      // ランクページは3x2カードで6段階を一覧表示する
       const rankCards = [
         {
           label: "Bronze",
-          range: "0円〜4,999円",
+          range: "0円〜14,999円",
           color: "#cd7f32",
-          x: centerX - 96,
-          y: centerY - 42,
+          x: centerX - 124,
+          y: centerY - 56,
         },
         {
           label: "Silver",
-          range: "5,000円〜8,999円",
+          range: "15,000円〜29,999円",
           color: "#c0c0c0",
-          x: centerX + 96,
-          y: centerY - 42,
+          x: centerX,
+          y: centerY - 56,
         },
         {
           label: "Gold",
-          range: "9,000円〜14,999円",
+          range: "30,000円〜44,999円",
           color: "#ffd700",
-          x: centerX - 96,
-          y: centerY + 8,
+          x: centerX + 124,
+          y: centerY - 56,
         },
         {
           label: "Platinum",
-          range: "15,000円以上",
+          range: "45,000円〜69,999円",
           color: "#67e8f9",
-          x: centerX + 96,
-          y: centerY + 8,
+          x: centerX - 124,
+          y: centerY + 2,
+        },
+        {
+          label: "Master",
+          range: "70,000円〜99,999円",
+          color: "#a78bfa",
+          x: centerX,
+          y: centerY + 2,
+        },
+        {
+          label: "God",
+          range: "100,000円以上",
+          color: "#f472b6",
+          x: centerX + 124,
+          y: centerY + 2,
         },
       ] as const;
       const rankCardObjects: (Phaser.GameObjects.Rectangle | Phaser.GameObjects.Text)[] = [];
       for (const card of rankCards) {
         const bg = this.add
-          .rectangle(card.x, card.y, 176, 38, 0x0f172a, 0.88)
+          .rectangle(card.x, card.y, 114, 48, 0x0f172a, 0.88)
           .setDepth(202)
           .setStrokeStyle(2, 0x94a3b8, 0.72)
           .setVisible(false);
         bg.setRounded?.(10);
         const labelText = this.add
-          .text(card.x - 76, card.y - 7, card.label, {
-            fontSize: "14px",
+          .text(card.x - 50, card.y - 10, card.label, {
+            fontSize: "13px",
             color: card.color,
             fontStyle: "bold",
             stroke: "#111827",
@@ -724,8 +739,8 @@ export class TitleScene extends Phaser.Scene {
           .setDepth(203)
           .setVisible(false);
         const rangeText = this.add
-          .text(card.x - 76, card.y + 8, card.range, {
-            fontSize: "13px",
+          .text(card.x - 50, card.y + 8, card.range, {
+            fontSize: "10px",
             color: "#f8fafc",
             fontStyle: "bold",
             stroke: "#111827",
@@ -736,16 +751,10 @@ export class TitleScene extends Phaser.Scene {
           .setVisible(false);
         rankCardObjects.push(bg, labelText, rangeText);
       }
-      const rankNoteBg = this.add
-        // 2行テキストでも窮屈にならないよう、ランク注記枠を広めに取る
-        .rectangle(centerX, centerY + 62, modalW - 96, 52, 0x0f172a, 0.9)
-        .setDepth(202)
-        .setStrokeStyle(2, 0xfbbf24, 0.82)
-        .setVisible(false);
-      rankNoteBg.setRounded?.(10);
+      // 下部注記は枠なしで表示し、文言変更時のはみ出しを防ぐ
       const rankNoteText = this.add
-        .text(centerX, centerY + 62, pages[3].body, {
-          fontSize: "14px",
+        .text(centerX, centerY + 66, pages[3].body, {
+          fontSize: "12px",
           color: "#f8fafc",
           align: "center",
           lineSpacing: 6,
@@ -796,7 +805,6 @@ export class TitleScene extends Phaser.Scene {
         for (const obj of rankCardObjects) {
           obj.setVisible(isRankPage);
         }
-        rankNoteBg.setVisible(isRankPage);
         rankNoteText.setVisible(isRankPage);
         if (isRankPage) {
           headingText.setColor("#fb923c");
@@ -830,7 +838,6 @@ export class TitleScene extends Phaser.Scene {
         headingText,
         bodyText,
         ...rankCardObjects,
-        rankNoteBg,
         rankNoteText,
         pagerText,
         ...prevButton,
@@ -1038,20 +1045,6 @@ export class TitleScene extends Phaser.Scene {
         .setShadow(0, 2, "#000000", 0.72, true, true);
       controls.push(body);
     }
-    const closeText = this.add
-      .text(centerX, centerY + modalH / 2 - 22, "タップで閉じる", {
-        fontSize: "16px",
-        color: "#fff4bd",
-        fontStyle: "bold",
-        stroke: "#7c5a00",
-        strokeThickness: 6,
-      })
-      .setOrigin(0.5, 1)
-      .setDepth(202)
-      .setShadow(0, 2, "#000000", 0.75, true, true)
-      .setInteractive({ useHandCursor: true });
-    closeText.on("pointerdown", () => this.closeInfoModal());
-
     const closeButton = this.add
       .rectangle(centerX + modalW / 2 - 24, centerY - modalH / 2 + 24, 28, 28, 0x334155, 0.96)
       .setStrokeStyle(2, 0xfde68a, 0.95)
@@ -1069,12 +1062,8 @@ export class TitleScene extends Phaser.Scene {
     closeButton.on("pointerdown", () => this.closeInfoModal());
 
     this.infoModalLayer = this.add
-      .container(0, 0, [backdrop, panel, title, ...controls, closeText, closeButton, closeButtonText])
+      .container(0, 0, [backdrop, panel, title, ...controls, closeButton, closeButtonText])
       .setDepth(200);
-    // 設定モーダルは誤タップで閉じやすいため、背景タップでの即閉じを無効化
-    if (payload.title !== "設定") {
-      backdrop.on("pointerdown", () => this.closeInfoModal());
-    }
     this.input.keyboard?.once("keydown-ESC", () => this.closeInfoModal());
   }
 

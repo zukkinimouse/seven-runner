@@ -70,10 +70,11 @@ export class GameScene extends Phaser.Scene {
     "obstacle-snatcher-2",
     "obstacle-snatcher-3",
   ] as const;
-  private static readonly ADVANCED_MODE_YEN_THRESHOLD = 15000;
-  private static readonly ADVANCED_MODE_ELAPSED_BONUS_SEC = 40;
-  private static readonly EXPERT_MODE_YEN_THRESHOLD = 20000;
-  private static readonly EXPERT_MODE_ELAPSED_BONUS_SEC = 20;
+  private static readonly SPEED_BOOST_SILVER_YEN = 15000;
+  private static readonly SPEED_BOOST_GOLD_YEN = 30000;
+  private static readonly SPEED_BOOST_PLATINUM_YEN = 45000;
+  private static readonly SPEED_BOOST_MASTER_YEN = 70000;
+  private static readonly SPEED_BOOST_GOD_YEN = 100000;
   private static readonly SNATCHER_HITBOX_SCALE_X = 0.8;
   private static readonly SNATCHER_HITBOX_SCALE_Y = 0.84;
   private static readonly SPECIAL_FLAME_COUNT = 7;
@@ -314,14 +315,16 @@ export class GameScene extends Phaser.Scene {
 
     const now = performance.now();
     const elapsedSec = (now - this.run.startMs) / 1000;
-    const difficultyElapsedSec =
-      elapsedSec + this.getAdvancedModeElapsedBonusSec();
-    const scrollSpeed = scrollSpeedForElapsedSeconds(difficultyElapsedSec);
+    // 店員スポーンの最大速度レイアウト判定は scrollSpeed に依存するため、
+    // ランク加速（ボーナス秒）とは分離して安定させる。
+    const baseScrollSpeed = scrollSpeedForElapsedSeconds(elapsedSec);
+    const difficultyElapsedSec = elapsedSec + this.getAdvancedModeElapsedBonusSec();
+    const boostedScrollSpeed = scrollSpeedForElapsedSeconds(difficultyElapsedSec);
     const deltaSec = this.game.loop.delta / 1000;
 
-    updateBackgroundScroll(this.background, this, elapsedSec, scrollSpeed, deltaSec);
+    updateBackgroundScroll(this.background, this, elapsedSec, boostedScrollSpeed, deltaSec);
 
-    updatePlayerPhysics(this.player, this.mode, scrollSpeed, now);
+    updatePlayerPhysics(this.player, this.mode, boostedScrollSpeed, now);
     updatePlayerVisual(this.player, this.mode);
     this.updateItemCollectorPosition();
     applyInvincibilityVisual(this.player, this.mode, now);
@@ -345,7 +348,7 @@ export class GameScene extends Phaser.Scene {
 
     this.updateSnatcherJumpUnlock();
     this.updateSnatcherJumpBehavior(now);
-    updateHazardVelocities(this.hazards, scrollSpeed);
+    updateHazardVelocities(this.hazards, boostedScrollSpeed);
     this.touchControlsUi?.setAttackCooldownRemainingMs(
       getAttackCooldownRemainingMs(this.mode, now),
     );
@@ -360,10 +363,10 @@ export class GameScene extends Phaser.Scene {
     this.spawnTimedEnergyDrink(now, this.player.x);
     this.cullStaleSpecialLogos(this.cameras.main.scrollX);
     this.spawnTimedSpecialLogo(now, this.player.x);
-    this.updateStaffNpcAndSpeech(now, scrollSpeed);
+    this.updateStaffNpcAndSpeech(now, baseScrollSpeed);
     cleanupOldChunks(this.chunks, this.cameras.main.scrollX);
 
-    this.updateHud(elapsedSec, scrollSpeed);
+    this.updateHud(elapsedSec, boostedScrollSpeed);
     this.updateComboUi();
 
     if (this.player.y > FALL_DEATH_Y || this.mode.hp <= 0) {
@@ -373,14 +376,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   private getAdvancedModeElapsedBonusSec(): number {
-    if (this.run.cartYen < GameScene.ADVANCED_MODE_YEN_THRESHOLD) return 0;
-    // 1万5000円超え後は難易度計算用の経過時間を底上げして上級モードへ移行する
-    let elapsedBonusSec = GameScene.ADVANCED_MODE_ELAPSED_BONUS_SEC;
-    if (this.run.cartYen >= GameScene.EXPERT_MODE_YEN_THRESHOLD) {
-      // 2万円超えでさらに速度を上げ、終盤の緊張感を強める
-      elapsedBonusSec += GameScene.EXPERT_MODE_ELAPSED_BONUS_SEC;
-    }
-    return elapsedBonusSec;
+    const yen = this.run.cartYen;
+    if (yen < GameScene.SPEED_BOOST_SILVER_YEN) return 0;
+    // 中間案（段階加速）: ランク帯に応じて難易度計算用の経過秒を底上げする
+    if (yen >= GameScene.SPEED_BOOST_GOD_YEN) return 110;
+    if (yen >= GameScene.SPEED_BOOST_MASTER_YEN) return 90;
+    if (yen >= GameScene.SPEED_BOOST_PLATINUM_YEN) return 70;
+    if (yen >= GameScene.SPEED_BOOST_GOLD_YEN) return 50;
+    return 30; // SILVER
   }
 
   private updateItemCollectorPosition(): void {
@@ -755,7 +758,7 @@ export class GameScene extends Phaser.Scene {
       const kind = hz.getData("kind") as "shoplifter" | "biker" | undefined;
       if (kind === "shoplifter") {
         this.spawnAttackHitEffect(hz.x, hz.y, "destructible");
-        const bonusYen = 1000;
+        const bonusYen = this.snatcherDefeatBonusByYen(this.run.cartYen);
         this.run.cartYen += bonusYen;
         this.run.receiptLines.push({
           name: "（ひったくり撃退ボーナス）",
@@ -923,6 +926,13 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  private snatcherDefeatBonusByYen(cartYen: number): number {
+    // 終盤は撃破リターンを段階強化し、ハイリスク行動の旨味を維持する
+    if (cartYen >= 70000) return 2000;
+    if (cartYen >= 45000) return 1500;
+    return 1000;
+  }
+
   private playSnatcherDefeatEffect(hz: Phaser.GameObjects.Image): void {
     hz.setData("isDefeated", true);
     hz.setData("isSnatcherJumping", false);
@@ -1031,7 +1041,7 @@ export class GameScene extends Phaser.Scene {
       const kind = hz.getData("kind") as "shoplifter" | "biker" | undefined;
       if (kind === "shoplifter") {
         this.spawnAttackHitEffect(hz.x, hz.y, "destructible");
-        const bonusYen = 1000;
+        const bonusYen = this.snatcherDefeatBonusByYen(this.run.cartYen);
         this.run.cartYen += bonusYen;
         this.run.receiptLines.push({
           name: "（ひったくり撃退ボーナス）",

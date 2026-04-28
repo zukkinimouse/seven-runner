@@ -12,7 +12,13 @@ export type ItemDefinition = {
   rarity: ItemRarity;
 };
 
-export type CouponRank = "D" | "C" | "B" | "A" | "P";
+export type CouponRank =
+  | "BRONZE"
+  | "SILVER"
+  | "GOLD"
+  | "PLATINUM"
+  | "MASTER"
+  | "GOD";
 
 export type ReceiptLine = {
   name: string;

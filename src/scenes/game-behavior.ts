@@ -68,7 +68,9 @@ export function collectItem(
     run.lastItemAt = now;
     const mult = comboMultiplierFromCount(run.comboCount);
     run.lastComboMult = mult;
-    delta = Math.floor(def.price * mult);
+    // 終盤帯は通常アイテムの価値を少し底上げし、拾う価値を維持する
+    const rankItemScale = itemValueScaleByYen(run.cartYen);
+    delta = Math.floor(def.price * mult * rankItemScale);
   }
 
   run.cartYen = Math.max(0, run.cartYen + delta);
@@ -93,10 +95,23 @@ export function collectItem(
 export function stealFromCart(run: RunState, now: number, mode: PlayerMode): number {
   if (now - mode.lastStealAt < 900) return 0;
   mode.lastStealAt = now;
-  const lost = Math.floor(run.cartYen * 0.2);
+  // 高ランク帯のみ減額率を緩和し、終盤の理不尽な失速を抑える
+  const lossRate = stealRateByYen(run.cartYen);
+  const lost = Math.floor(run.cartYen * lossRate);
   run.cartYen = Math.max(0, run.cartYen - lost);
   run.receiptLines.push({ name: "（ひったくり被害）", yen: -lost });
   return lost;
+}
+
+function itemValueScaleByYen(cartYen: number): number {
+  if (cartYen >= 70000) return 1.5;
+  if (cartYen >= 45000) return 1.25;
+  return 1;
+}
+
+function stealRateByYen(cartYen: number): number {
+  void cartYen;
+  return 0.2;
 }
 
 /** 箱ドロップ用：弁当は小だけ偏りやすいので中・大をやや多めに抽選する */

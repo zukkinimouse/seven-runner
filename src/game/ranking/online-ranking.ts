@@ -20,6 +20,23 @@ type VerifyRecoveryPinRow = {
   nickname: string | null;
 };
 
+type MyWeeklyRankRow = {
+  my_rank: number;
+  total_players: number;
+  my_score_yen: number;
+};
+
+type WeeklyRankDistributionRow = {
+  bronze_count: number;
+  silver_count: number;
+  gold_count: number;
+  platinum_count: number;
+  master_count: number;
+  god_count: number;
+  total_players: number;
+  calculated_at: string;
+};
+
 export type WeeklyStoreRankingRecord = {
   guestId: string;
   nickname: string;
@@ -30,6 +47,23 @@ export type WeeklyStoreRankingRecord = {
 export type VerifyRecoveryPinResult = {
   isValid: boolean;
   nickname: string | null;
+};
+
+export type MyWeeklyRankResult = {
+  myRank: number;
+  totalPlayers: number;
+  myScoreYen: number;
+};
+
+export type WeeklyRankDistributionResult = {
+  bronzeCount: number;
+  silverCount: number;
+  goldCount: number;
+  platinumCount: number;
+  masterCount: number;
+  godCount: number;
+  totalPlayers: number;
+  calculatedAt: string;
 };
 
 let cachedClient: SupabaseClient | null | undefined;
@@ -124,6 +158,50 @@ export async function fetchWeeklyStoreRankingFromSupabase(args: {
     scoreYen: row.best_score_yen,
     bestRunAt: row.best_run_at,
   }));
+}
+
+export async function fetchMyWeeklyRankFromSupabase(args: {
+  storeId: string;
+  guestId: string;
+}): Promise<MyWeeklyRankResult | null> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("get_my_weekly_rank", {
+    p_store_id: args.storeId,
+    p_guest_id: args.guestId,
+  });
+  if (error) throw error;
+  if (!Array.isArray(data) || data.length === 0) return null;
+  const row = data[0] as MyWeeklyRankRow;
+  if (!row.my_rank || !row.total_players) return null;
+  return {
+    myRank: row.my_rank,
+    totalPlayers: row.total_players,
+    myScoreYen: row.my_score_yen,
+  };
+}
+
+export async function fetchWeeklyRankDistributionFromSupabase(args: {
+  storeId: string;
+}): Promise<WeeklyRankDistributionResult | null> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("get_weekly_rank_distribution", {
+    p_store_id: args.storeId,
+  });
+  if (error) throw error;
+  if (!Array.isArray(data) || data.length === 0) return null;
+  const row = data[0] as WeeklyRankDistributionRow;
+  return {
+    bronzeCount: row.bronze_count,
+    silverCount: row.silver_count,
+    goldCount: row.gold_count,
+    platinumCount: row.platinum_count,
+    masterCount: row.master_count,
+    godCount: row.god_count,
+    totalPlayers: row.total_players,
+    calculatedAt: row.calculated_at,
+  };
 }
 
 export async function setRecoveryPinOnSupabase(args: {
