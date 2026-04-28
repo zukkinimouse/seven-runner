@@ -37,7 +37,9 @@ const STAFF_TWEAK_FIRST = -1090;
 const STAFF_TWEAK_SECOND = -830;
 const STAFF_TWEAK_STEP_BASE = 1500;
 const STAFF_TWEAK_STEP_GROW = 30;
-const STAFF_TWEAK_STEP_MAX_SPEED = 80;
+const STAFF_TWEAK_STEP_MAX_SPEED = 20;
+// 最大速度レイアウト時のみ、全スロットを一律で少し左へ寄せる
+const STAFF_MAX_SPEED_GLOBAL_OFFSET_X = -40;
 const STAFF_MAX_SPEED_LAYOUT_ON = 332;
 const STAFF_MAX_SPEED_LAYOUT_OFF = 326;
 const STAFF_DESPAWN_GRACE_MS = 220;
@@ -186,6 +188,7 @@ function worldStaffAnchorX(
   scrollX: number,
   scrollCompensationX: number,
 ): number {
+  const maxSpeedGlobalOffset = isAtMaxSpeed ? STAFF_MAX_SPEED_GLOBAL_OFFSET_X : 0;
   return Math.round(
     metrics.offsetX +
       slot * metrics.patternWidth -
@@ -193,6 +196,7 @@ function worldStaffAnchorX(
       scrollX +
       scrollCompensationX +
       STAFF_X_OFFSET +
+      maxSpeedGlobalOffset +
       slotTweakX(slot, isAtMaxSpeed),
   );
 }

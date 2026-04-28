@@ -110,6 +110,9 @@ export class GameScene extends Phaser.Scene {
     "item-effect-pickup-6",
   ] as const;
   private static readonly SKILL_HOLD_FRAME_MS = 90;
+  // 一時デバッグ用: true で開始直後から最大速度(360px/s)扱いにする
+  private static readonly DEBUG_FORCE_MAX_SPEED_START = false;
+  private static readonly MAX_SPEED_ELAPSED_SEC = 180;
 
   private player!: Phaser.Types.Physics.Arcade.SpriteWithDynamicBody;
   private itemCollector!: Phaser.GameObjects.Rectangle;
@@ -315,10 +318,13 @@ export class GameScene extends Phaser.Scene {
 
     const now = performance.now();
     const elapsedSec = (now - this.run.startMs) / 1000;
+    const speedElapsedSec = GameScene.DEBUG_FORCE_MAX_SPEED_START
+      ? GameScene.MAX_SPEED_ELAPSED_SEC
+      : elapsedSec;
     // 店員スポーンの最大速度レイアウト判定は scrollSpeed に依存するため、
     // ランク加速（ボーナス秒）とは分離して安定させる。
-    const baseScrollSpeed = scrollSpeedForElapsedSeconds(elapsedSec);
-    const difficultyElapsedSec = elapsedSec + this.getAdvancedModeElapsedBonusSec();
+    const baseScrollSpeed = scrollSpeedForElapsedSeconds(speedElapsedSec);
+    const difficultyElapsedSec = speedElapsedSec + this.getAdvancedModeElapsedBonusSec();
     const boostedScrollSpeed = scrollSpeedForElapsedSeconds(difficultyElapsedSec);
     const deltaSec = this.game.loop.delta / 1000;
 
